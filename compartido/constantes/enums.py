@@ -1,10 +1,17 @@
 """
 Enumeraciones y constantes compartidas para el sistema experto.
 """
-from enum import Enum
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        def __str__(self):
+            return str(self.value)
 
 
-class EstadoSistema(str, Enum):
+class EstadoSistema(StrEnum):
     BORRADOR = "BORRADOR"
     ACTIVO = "ACTIVO"
     ARCHIVADO = "ARCHIVADO"
@@ -14,7 +21,7 @@ class EstadoSistema(str, Enum):
         return [(item.value, item.value) for item in cls]
 
 
-class TipoDato(str, Enum):
+class TipoDato(StrEnum):
     TEXTO = "TEXTO"
     ENTERO = "ENTERO"
     DECIMAL = "DECIMAL"
@@ -25,7 +32,7 @@ class TipoDato(str, Enum):
         return [(item.value, item.value) for item in cls]
 
 
-class OperadorCondicion(str, Enum):
+class OperadorCondicion(StrEnum):
     IGUAL = "="
     DISTINTO = "!="
     MAYOR = ">"
@@ -39,7 +46,7 @@ class OperadorCondicion(str, Enum):
         return [(item.value, item.value) for item in cls]
 
 
-class TipoNodoVisual(str, Enum):
+class TipoNodoVisual(StrEnum):
     HECHO = "HECHO"
     VARIABLE = "VARIABLE"
     CONDICION = "CONDICION"
@@ -51,7 +58,7 @@ class TipoNodoVisual(str, Enum):
         return [(item.value, item.value) for item in cls]
 
 
-class EstadoEjecucion(str, Enum):
+class EstadoEjecucion(StrEnum):
     INICIADA = "INICIADA"
     EJECUTANDO = "EJECUTANDO"
     FINALIZADA = "FINALIZADA"
@@ -62,7 +69,7 @@ class EstadoEjecucion(str, Enum):
         return [(item.value, item.value) for item in cls]
 
 
-class EstadoReglaInferencia(str, Enum):
+class EstadoReglaInferencia(StrEnum):
     EVALUADA = "EVALUADA"
     RECHAZADA = "RECHAZADA"
     ACTIVADA = "ACTIVADA"
