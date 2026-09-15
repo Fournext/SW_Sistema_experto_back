@@ -17,7 +17,7 @@ class ReglaEvaluadaTrazaSerializer(serializers.Serializer):
     orden = serializers.IntegerField()
     resultado_generado = serializers.CharField(allow_null=True, required=False)
 
-    def get_estado(self, obj):
+    def get_estado(self, obj) -> str:
         val = getattr(obj, "estado", "")
         return val.value if hasattr(val, "value") else str(val)
 
@@ -30,7 +30,7 @@ class EjecutarInferenciaSalidaSerializer(serializers.Serializer):
     hechos_generados = HechoReporteSerializer(many=True)
     conclusion_final = serializers.CharField(allow_null=True)
 
-    def get_estado(self, obj):
+    def get_estado(self, obj) -> str:
         val = getattr(obj, "estado", "")
         return val.value if hasattr(val, "value") else str(val)
 
@@ -43,7 +43,7 @@ class EjecucionInferenciaSalidaSerializer(serializers.Serializer):
     fecha_fin = serializers.DateTimeField(allow_null=True)
     conclusion_final = serializers.CharField(allow_null=True)
 
-    def get_estado(self, obj):
+    def get_estado(self, obj) -> str:
         val = getattr(obj, "estado", "")
         return val.value if hasattr(val, "value") else str(val)
 
@@ -57,6 +57,6 @@ class DetalleInferenciaSalidaSerializer(serializers.Serializer):
     condiciones_cumplidas = serializers.BooleanField(allow_null=True)
     resultado_generado = serializers.CharField(allow_null=True)
 
-    def get_estado_regla(self, obj):
+    def get_estado_regla(self, obj) -> str:
         val = getattr(obj, "estado_regla", "")
         return val.value if hasattr(val, "value") else str(val)
