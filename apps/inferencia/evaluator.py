@@ -42,6 +42,9 @@ class EvaluadorCondicion:
             return False
 
         valor_actual = memoria_trabajo[clave]
+        # Desconocido no satisface comparaciones, ni siquiera una desigualdad.
+        if valor_actual is None or (isinstance(valor_actual, str) and not valor_actual.strip()):
+            return False
         valor_esperado_str = str(condicion.valor_esperado).strip()
         operador = (
             condicion.operador.value

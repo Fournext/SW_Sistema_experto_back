@@ -208,6 +208,8 @@ class DjangoHechoRepositorio(HechoRepositorio):
             nombre=m.nombre,
             valor=m.valor,
             tipo_dato=TipoDato(m.tipo_dato),
+            opciones=m.opciones or [],
+            pregunta=m.pregunta,
             es_inicial=m.es_inicial,
         )
 
@@ -243,6 +245,8 @@ class DjangoHechoRepositorio(HechoRepositorio):
                     if hasattr(hecho.tipo_dato, "value")
                     else hecho.tipo_dato
                 ),
+                "opciones": hecho.opciones or [],
+                "pregunta": hecho.pregunta,
                 "es_inicial": hecho.es_inicial,
             },
         )
@@ -263,6 +267,8 @@ class DjangoVariableRepositorio(VariableRepositorio):
             nombre=m.nombre,
             tipo_dato=TipoDato(m.tipo_dato),
             valor_defecto=m.valor_defecto,
+            pregunta=m.pregunta,
+            es_inicial=m.es_inicial,
             descripcion=m.descripcion,
         )
 
@@ -296,6 +302,8 @@ class DjangoVariableRepositorio(VariableRepositorio):
                     else variable.tipo_dato
                 ),
                 "valor_defecto": variable.valor_defecto,
+                "pregunta": variable.pregunta,
+                "es_inicial": variable.es_inicial,
                 "descripcion": variable.descripcion,
             },
         )

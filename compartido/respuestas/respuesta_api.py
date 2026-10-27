@@ -40,3 +40,24 @@ def respuesta_error(
         "errors": errores if errores is not None else {},
     }
     return Response(cuerpo, status=codigo_estado)
+
+
+class RespuestaAPI:
+    """Adaptador estático orientado a objetos para generar respuestas uniformes."""
+
+    @staticmethod
+    def exito(
+        data: Any = None,
+        mensaje: str = "Operación realizada con éxito.",
+        codigo_estado: int = status.HTTP_200_OK,
+    ) -> Response:
+        return respuesta_exitosa(datos=data, mensaje=mensaje, codigo_estado=codigo_estado)
+
+    @staticmethod
+    def error(
+        mensaje: str = "Ocurrió un error al procesar la solicitud.",
+        errores: Optional[Any] = None,
+        codigo_estado: int = status.HTTP_400_BAD_REQUEST,
+    ) -> Response:
+        return respuesta_error(mensaje=mensaje, errores=errores, codigo_estado=codigo_estado)
+

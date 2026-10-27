@@ -7,6 +7,9 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from apps.permisos.codigos import Permisos
+from apps.permisos.guards import permisos_por_metodo
+from apps.permisos.visibilidad import SistemaPublicadoPermission, puede_ver_borradores
 
 from apps.sistemas_expertos.serializers import (
     SistemaExpertoEntradaSerializer,
@@ -25,6 +28,10 @@ from compartido.respuestas.respuesta_api import respuesta_creada, respuesta_exit
 
 class SistemaExpertoListCreateAPIView(APIView):
     """Listar todos los sistemas expertos o crear uno nuevo."""
+    permission_classes = [SistemaPublicadoPermission, permisos_por_metodo({
+        "GET": Permisos.SISTEMAS_VER, "POST": Permisos.SISTEMAS_CREAR,
+        "HEAD": Permisos.SISTEMAS_VER, "OPTIONS": Permisos.SISTEMAS_VER,
+    })]
 
     @extend_schema(
         summary="Listar sistemas expertos",
@@ -35,6 +42,16 @@ class SistemaExpertoListCreateAPIView(APIView):
     def get(self, request):
         caso_uso = ListarSistemasExpertos()
         sistemas = caso_uso.ejecutar()
+        from apps.sistemas_expertos.models import SistemaExpertoModel
+        from django.db.models import Q
+        visibles = SistemaExpertoModel.objects.filter(trabajo_actividad__isnull=True)
+        if puede_ver_borradores(request) and not request.user.is_superuser:
+            visibles = visibles.filter(Q(created_by=request.user) | Q(created_by__isnull=True))
+        ids = set(visibles.values_list("id", flat=True))
+        sistemas = [s for s in sistemas if s.id in ids]
+        if not puede_ver_borradores(request):
+            ids = set(visibles.exclude(estado="BORRADOR").filter(actividades__isnull=True).values_list("id", flat=True))
+            sistemas = [s for s in sistemas if s.id in ids]
         datos = SistemaExpertoSalidaSerializer(sistemas, many=True).data
         return respuesta_exitosa(datos=datos, mensaje="Sistemas expertos listados correctamente.")
 
@@ -58,12 +75,19 @@ class SistemaExpertoListCreateAPIView(APIView):
             descripcion=serializer.validated_data.get("descripcion"),
             estado=serializer.validated_data.get("estado"),
         )
+        from apps.sistemas_expertos.models import SistemaExpertoModel
+        SistemaExpertoModel.objects.filter(pk=sistema.id).update(created_by=request.user)
         datos = SistemaExpertoSalidaSerializer(sistema).data
         return respuesta_creada(datos=datos, mensaje="Sistema experto creado correctamente.")
 
 
 class SistemaExpertoDetailAPIView(APIView):
     """Consultar, actualizar o eliminar un sistema experto por su ID."""
+    permission_classes = [SistemaPublicadoPermission, permisos_por_metodo({
+        "GET": Permisos.SISTEMAS_VER, "PUT": Permisos.SISTEMAS_EDITAR,
+        "PATCH": Permisos.SISTEMAS_EDITAR, "DELETE": Permisos.SISTEMAS_ELIMINAR,
+        "HEAD": Permisos.SISTEMAS_VER, "OPTIONS": Permisos.SISTEMAS_VER,
+    })]
 
     @extend_schema(
         summary="Obtener sistema experto",

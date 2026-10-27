@@ -82,17 +82,39 @@ class ConclusionSalidaSerializer(serializers.Serializer):
 # HECHO SERIALIZERS
 # =====================================================================
 
+class ValorInicialField(serializers.CharField):
+    def to_internal_value(self, data):
+        if isinstance(data, bool):
+            return "true" if data else "false"
+        return super().to_internal_value(data)
+
+
 class HechoEntradaSerializer(serializers.Serializer):
     nombre = serializers.CharField(max_length=150, required=True)
-    valor = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True)
+    valor = ValorInicialField(max_length=255, required=False, allow_null=True, allow_blank=True)
     tipo_dato = serializers.ChoiceField(choices=TipoDato.choices(), default=TipoDato.TEXTO.value)
+    opciones = serializers.ListField(
+        child=serializers.CharField(max_length=150),
+        required=False,
+        default=list,
+    )
+    pregunta = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
     es_inicial = serializers.BooleanField(default=True)
 
 
 class HechoParcialEntradaSerializer(serializers.Serializer):
     nombre = serializers.CharField(max_length=150, required=False)
-    valor = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True)
+    valor = ValorInicialField(max_length=255, required=False, allow_null=True, allow_blank=True)
     tipo_dato = serializers.ChoiceField(choices=TipoDato.choices(), required=False)
+    opciones = serializers.ListField(
+        child=serializers.CharField(max_length=150),
+        required=False,
+    )
+    pregunta = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
     es_inicial = serializers.BooleanField(required=False)
 
 
@@ -102,6 +124,8 @@ class HechoSalidaSerializer(serializers.Serializer):
     nombre = serializers.CharField()
     valor = serializers.CharField(allow_null=True)
     tipo_dato = serializers.CharField()
+    opciones = serializers.ListField(child=serializers.CharField(), default=list)
+    pregunta = serializers.CharField(allow_null=True)
     es_inicial = serializers.BooleanField()
 
 
@@ -112,18 +136,26 @@ class HechoSalidaSerializer(serializers.Serializer):
 class VariableEntradaSerializer(serializers.Serializer):
     nombre = serializers.CharField(max_length=150, required=True)
     tipo_dato = serializers.ChoiceField(choices=TipoDato.choices(), default=TipoDato.TEXTO.value)
-    valor_defecto = serializers.CharField(
+    valor_defecto = ValorInicialField(
         max_length=255, required=False, allow_null=True, allow_blank=True
     )
+    pregunta = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
+    es_inicial = serializers.BooleanField(required=False, default=False)
     descripcion = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class VariableParcialEntradaSerializer(serializers.Serializer):
     nombre = serializers.CharField(max_length=150, required=False)
     tipo_dato = serializers.ChoiceField(choices=TipoDato.choices(), required=False)
-    valor_defecto = serializers.CharField(
+    valor_defecto = ValorInicialField(
         max_length=255, required=False, allow_null=True, allow_blank=True
     )
+    pregunta = serializers.CharField(
+        max_length=255, required=False, allow_null=True, allow_blank=True
+    )
+    es_inicial = serializers.BooleanField(required=False)
     descripcion = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
@@ -133,6 +165,8 @@ class VariableSalidaSerializer(serializers.Serializer):
     nombre = serializers.CharField()
     tipo_dato = serializers.CharField()
     valor_defecto = serializers.CharField(allow_null=True)
+    pregunta = serializers.CharField(allow_null=True)
+    es_inicial = serializers.BooleanField()
     descripcion = serializers.CharField(allow_null=True)
 
 

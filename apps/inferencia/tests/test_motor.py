@@ -230,3 +230,54 @@ def test_caso_6_detectar_limite_maximo_iteraciones():
     motor = MotorInferencia(max_iteraciones=0)
     with pytest.raises(LimiteIteracionesAlcanzado):
         motor.ejecutar(hechos_iniciales=[hecho], reglas=[regla])
+
+
+def test_caso_7_ejecutar_un_paso_regla_individual():
+    """
+    Caso 7:
+    Evaluar una regla individualmente en simulación paso a paso:
+    - Si cumple, se activa, devuelve su conclusión y actualiza la memoria.
+    - Si no cumple, queda rechazada.
+    """
+    id_temp = uuid4()
+    id_diag = uuid4()
+    mapa = {str(id_temp): "temperatura", str(id_diag): "diagnostico"}
+
+    r_fiebre = Regla(
+        id=uuid4(),
+        nombre="Regla_Fiebre",
+        prioridad=10,
+        condiciones=[Condicion(hecho_id=id_temp, operador=OperadorCondicion.MAYOR, valor_esperado="38.0")],
+        conclusiones=[Conclusion(hecho_resultante_id=id_diag, valor_resultante="Fiebre Alta")],
+    )
+
+    motor = MotorInferencia()
+
+    # 1. Caso no cumple (37.0 < 38.0) -> RECHAZADA
+    paso_no_cumple = motor.ejecutar_un_paso_regla(
+        memoria_trabajo={"temperatura": 37.0},
+        regla=r_fiebre,
+        numero_paso=1,
+        mapa_ids_a_nombres=mapa,
+    )
+    assert not paso_no_cumple.finalizado
+    assert paso_no_cumple.regla_disparada is None
+    assert len(paso_no_cumple.hechos_generados) == 0
+    assert any(t.estado == EstadoReglaInferencia.RECHAZADA for t in paso_no_cumple.trazas_paso)
+
+    # 2. Caso cumple (39.0 > 38.0) -> ACTIVADA y EJECUTADA con resultado
+    paso_cumple = motor.ejecutar_un_paso_regla(
+        memoria_trabajo={"temperatura": 39.0},
+        regla=r_fiebre,
+        numero_paso=2,
+        mapa_ids_a_nombres=mapa,
+        es_ultimo_paso=True,
+    )
+    assert paso_cumple.finalizado
+    assert paso_cumple.regla_disparada.id == r_fiebre.id
+    assert len(paso_cumple.hechos_generados) == 1
+    assert paso_cumple.hechos_generados[0]["nombre"] == "diagnostico"
+    assert paso_cumple.hechos_generados[0]["valor"] == "Fiebre Alta"
+    assert paso_cumple.memoria_trabajo_post["diagnostico"] == "Fiebre Alta"
+    assert any(t.estado == EstadoReglaInferencia.EJECUTADA for t in paso_cumple.trazas_paso)
+

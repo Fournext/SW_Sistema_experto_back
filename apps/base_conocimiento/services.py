@@ -2,7 +2,7 @@
 Servicios y casos de uso para el módulo de Base de Conocimiento.
 """
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from apps.base_conocimiento.entities import (
@@ -41,6 +41,12 @@ from apps.base_conocimiento.repositories import (
 from apps.base_conocimiento.validators import ValidadorBaseConocimiento
 from compartido.constantes.enums import OperadorCondicion, TipoDato
 from compartido.excepciones.base import ExcepcionValidacionDominio
+
+VALOR_NO_ENVIADO = object()
+
+
+def _valor_inicial_opcional(valor):
+    return None if valor is None or (isinstance(valor, str) and not valor.strip()) else valor
 
 
 # =====================================================================
@@ -105,6 +111,8 @@ class CrearHecho:
         nombre: str,
         valor: Optional[str] = None,
         tipo_dato: str = TipoDato.TEXTO.value,
+        opciones: Optional[List[str]] = None,
+        pregunta: Optional[str] = None,
         es_inicial: bool = True,
     ) -> Hecho:
         nombre = nombre.strip()
@@ -119,8 +127,10 @@ class CrearHecho:
         hecho = Hecho(
             base_conocimiento_id=base_conocimiento_id,
             nombre=nombre,
-            valor=valor,
+            valor=_valor_inicial_opcional(valor),
             tipo_dato=TipoDato(tipo_dato),
+            opciones=opciones or [],
+            pregunta=pregunta if es_inicial else None,
             es_inicial=es_inicial,
         )
         return self.repo_hecho.guardar(hecho)
@@ -134,8 +144,10 @@ class ActualizarHecho:
         self,
         id_hecho: UUID,
         nombre: Optional[str] = None,
-        valor: Optional[str] = None,
+        valor: Any = VALOR_NO_ENVIADO,
         tipo_dato: Optional[str] = None,
+        opciones: Optional[List[str]] = None,
+        pregunta: Optional[str] = None,
         es_inicial: Optional[bool] = None,
     ) -> Hecho:
         hecho = self.repo_hecho.obtener_por_id(id_hecho)
@@ -150,15 +162,23 @@ class ActualizarHecho:
                 raise HechoDuplicadoError(nombre)
             hecho.nombre = nombre
 
-        if valor is not None:
-            hecho.valor = valor
+        if valor is not VALOR_NO_ENVIADO:
+            hecho.valor = _valor_inicial_opcional(valor)
 
         if tipo_dato is not None:
             ValidadorBaseConocimiento.validar_tipo_dato(tipo_dato)
             hecho.tipo_dato = TipoDato(tipo_dato)
 
+        if opciones is not None:
+            hecho.opciones = opciones
+
         if es_inicial is not None:
             hecho.es_inicial = es_inicial
+
+        if not hecho.es_inicial:
+            hecho.pregunta = None
+        elif pregunta is not None:
+            hecho.pregunta = pregunta
 
         return self.repo_hecho.guardar(hecho)
 
@@ -212,6 +232,8 @@ class CrearVariable:
         nombre: str,
         tipo_dato: str = TipoDato.TEXTO.value,
         valor_defecto: Optional[str] = None,
+        pregunta: Optional[str] = None,
+        es_inicial: bool = False,
         descripcion: Optional[str] = None,
     ) -> Variable:
         nombre = nombre.strip()
@@ -227,7 +249,9 @@ class CrearVariable:
             base_conocimiento_id=base_conocimiento_id,
             nombre=nombre,
             tipo_dato=TipoDato(tipo_dato),
-            valor_defecto=valor_defecto,
+            valor_defecto=_valor_inicial_opcional(valor_defecto),
+            pregunta=pregunta if es_inicial else None,
+            es_inicial=es_inicial,
             descripcion=descripcion,
         )
         return self.repo_variable.guardar(variable)
@@ -242,7 +266,9 @@ class ActualizarVariable:
         id_variable: UUID,
         nombre: Optional[str] = None,
         tipo_dato: Optional[str] = None,
-        valor_defecto: Optional[str] = None,
+        valor_defecto: Any = VALOR_NO_ENVIADO,
+        pregunta: Optional[str] = None,
+        es_inicial: Optional[bool] = None,
         descripcion: Optional[str] = None,
     ) -> Variable:
         variable = self.repo_variable.obtener_por_id(id_variable)
@@ -261,8 +287,16 @@ class ActualizarVariable:
             ValidadorBaseConocimiento.validar_tipo_dato(tipo_dato)
             variable.tipo_dato = TipoDato(tipo_dato)
 
-        if valor_defecto is not None:
-            variable.valor_defecto = valor_defecto
+        if valor_defecto is not VALOR_NO_ENVIADO:
+            variable.valor_defecto = _valor_inicial_opcional(valor_defecto)
+
+        if es_inicial is not None:
+            variable.es_inicial = es_inicial
+
+        if not variable.es_inicial:
+            variable.pregunta = None
+        elif pregunta is not None:
+            variable.pregunta = pregunta
 
         if descripcion is not None:
             variable.descripcion = descripcion

@@ -51,6 +51,17 @@ class HechoModel(models.Model):
         default=TipoDato.TEXTO.value,
         verbose_name="Tipo de dato",
     )
+    opciones = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Opciones disponibles",
+    )
+    pregunta = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Pregunta para el usuario",
+    )
     es_inicial = models.BooleanField(default=True, verbose_name="¿Es hecho inicial?")
 
     class Meta:
@@ -89,6 +100,13 @@ class VariableModel(models.Model):
     valor_defecto = models.CharField(
         max_length=255, null=True, blank=True, verbose_name="Valor por defecto"
     )
+    pregunta = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name="Pregunta para el usuario",
+    )
+    es_inicial = models.BooleanField(default=False, verbose_name="¿Es variable inicial?")
     descripcion = models.TextField(null=True, blank=True, verbose_name="Descripción")
 
     class Meta:

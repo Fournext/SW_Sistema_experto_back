@@ -27,14 +27,25 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Terceros
     "rest_framework",
+    "rest_framework_simplejwt",
     "corsheaders",
     "drf_spectacular",
+    # Módulo de usuarios personalizados y permisos
+    "apps.usuarios.apps.UsuariosConfig",
+    "apps.permisos.apps.PermisosConfig",
+    "apps.central.apps.CentralConfig",
+    "apps.autenticacion.apps.AutenticacionConfig",
     # Módulos propios del monolito modular
     "apps.sistemas_expertos.apps.SistemasExpertosConfig",
     "apps.base_conocimiento.apps.BaseConocimientoConfig",
     "apps.editor_visual.apps.EditorVisualConfig",
     "apps.inferencia.apps.InferenciaConfig",
+    "apps.validacion.apps.ValidacionConfig",
+    "apps.actividades.apps.ActividadesConfig",
 ]
+
+AUTH_USER_MODEL = "usuarios.Usuario"
+SISTEMA_SLUG = os.getenv("SISTEMA_SLUG", "sistema-experto")
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -114,10 +125,27 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "compartido.paginacion.paginacion_personalizada.PaginacionEstandar",
     "PAGE_SIZE": 20,
     "EXCEPTION_HANDLER": "compartido.excepciones.manejadores.manejador_excepciones_global",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+        "apps.permisos.visibilidad.SistemaPublicadoPermission",
+    ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
+}
+
+from datetime import timedelta
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 # Swagger / OpenAPI con drf-spectacular
@@ -125,7 +153,7 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "API Software Educativo de Sistemas Expertos",
     "DESCRIPTION": (
         "Backend del Software Educativo Interactivo de Apoyo Docente "
-        "para la Enseñanza de Sistemas Expertos (Sprint 1)."
+        "para la Enseñanza de Sistemas Expertos."
     ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,

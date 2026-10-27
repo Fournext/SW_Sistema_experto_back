@@ -19,6 +19,8 @@ class Hecho:
     nombre: str = ""
     valor: Optional[str] = None
     tipo_dato: TipoDato = TipoDato.TEXTO
+    opciones: List[str] = field(default_factory=list)
+    pregunta: Optional[str] = None
     es_inicial: bool = True
 
 
@@ -31,6 +33,8 @@ class Variable:
     nombre: str = ""
     tipo_dato: TipoDato = TipoDato.TEXTO
     valor_defecto: Optional[str] = None
+    pregunta: Optional[str] = None
+    es_inicial: bool = False
     descripcion: Optional[str] = None
 
 

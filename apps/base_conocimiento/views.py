@@ -105,6 +105,8 @@ class HechoListCreateAPIView(APIView):
             nombre=serializer.validated_data["nombre"],
             valor=serializer.validated_data.get("valor"),
             tipo_dato=serializer.validated_data.get("tipo_dato"),
+            opciones=serializer.validated_data.get("opciones"),
+            pregunta=serializer.validated_data.get("pregunta"),
             es_inicial=serializer.validated_data.get("es_inicial", True),
         )
         datos = HechoSalidaSerializer(hecho).data
@@ -138,10 +140,7 @@ class HechoDetailAPIView(APIView):
         caso_uso = ActualizarHecho()
         hecho = caso_uso.ejecutar(
             id_hecho=id,
-            nombre=serializer.validated_data["nombre"],
-            valor=serializer.validated_data.get("valor"),
-            tipo_dato=serializer.validated_data.get("tipo_dato"),
-            es_inicial=serializer.validated_data.get("es_inicial"),
+            **serializer.validated_data,
         )
         datos = HechoSalidaSerializer(hecho).data
         return respuesta_exitosa(datos=datos, mensaje="Hecho actualizado correctamente.")
@@ -159,10 +158,7 @@ class HechoDetailAPIView(APIView):
         caso_uso = ActualizarHecho()
         hecho = caso_uso.ejecutar(
             id_hecho=id,
-            nombre=serializer.validated_data.get("nombre"),
-            valor=serializer.validated_data.get("valor"),
-            tipo_dato=serializer.validated_data.get("tipo_dato"),
-            es_inicial=serializer.validated_data.get("es_inicial"),
+            **serializer.validated_data,
         )
         datos = HechoSalidaSerializer(hecho).data
         return respuesta_exitosa(datos=datos, mensaje="Hecho actualizado parcialmente.")
@@ -215,6 +211,8 @@ class VariableListCreateAPIView(APIView):
             nombre=serializer.validated_data["nombre"],
             tipo_dato=serializer.validated_data.get("tipo_dato"),
             valor_defecto=serializer.validated_data.get("valor_defecto"),
+            pregunta=serializer.validated_data.get("pregunta"),
+            es_inicial=serializer.validated_data.get("es_inicial", False),
             descripcion=serializer.validated_data.get("descripcion"),
         )
         datos = VariableSalidaSerializer(variable).data
@@ -248,10 +246,7 @@ class VariableDetailAPIView(APIView):
         caso_uso = ActualizarVariable()
         variable = caso_uso.ejecutar(
             id_variable=id,
-            nombre=serializer.validated_data["nombre"],
-            tipo_dato=serializer.validated_data.get("tipo_dato"),
-            valor_defecto=serializer.validated_data.get("valor_defecto"),
-            descripcion=serializer.validated_data.get("descripcion"),
+            **serializer.validated_data,
         )
         datos = VariableSalidaSerializer(variable).data
         return respuesta_exitosa(datos=datos, mensaje="Variable actualizada correctamente.")
@@ -269,10 +264,7 @@ class VariableDetailAPIView(APIView):
         caso_uso = ActualizarVariable()
         variable = caso_uso.ejecutar(
             id_variable=id,
-            nombre=serializer.validated_data.get("nombre"),
-            tipo_dato=serializer.validated_data.get("tipo_dato"),
-            valor_defecto=serializer.validated_data.get("valor_defecto"),
-            descripcion=serializer.validated_data.get("descripcion"),
+            **serializer.validated_data,
         )
         datos = VariableSalidaSerializer(variable).data
         return respuesta_exitosa(datos=datos, mensaje="Variable actualizada parcialmente.")

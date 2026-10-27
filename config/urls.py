@@ -17,9 +17,15 @@ urlpatterns = [
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 
+    # Autenticación y Admin Central
+    path("api/v1/", include("apps.autenticacion.urls", namespace="autenticacion")),
+    path("api/v1/", include("apps.central.urls", namespace="central")),
+
     # Rutas API v1 por módulo
     path("api/v1/", include("apps.sistemas_expertos.urls", namespace="sistemas_expertos")),
     path("api/v1/", include("apps.base_conocimiento.urls", namespace="base_conocimiento")),
     path("api/v1/", include("apps.editor_visual.urls", namespace="editor_visual")),
     path("api/v1/", include("apps.inferencia.urls", namespace="inferencia")),
+    path("api/v1/", include("apps.validacion.urls", namespace="validacion")),
+    path("api/v1/", include("apps.actividades.urls", namespace="actividades")),
 ]
