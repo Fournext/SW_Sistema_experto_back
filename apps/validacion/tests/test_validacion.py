@@ -242,3 +242,239 @@ def test_api_rest_validacion_y_reporte_incidencias(api_client, se_con_base):
     assert "sugerencia" in primera_inc
     assert "posible_causa" in primera_inc
     assert primera_inc["severidad"] == "ERROR"
+
+
+# =========================================================================
+# PRUEBAS PARA LOS NUEVOS ANÁLISIS SEMÁNTICO-LÓGICOS (VAL-011 a VAL-017)
+# =========================================================================
+
+def test_deteccion_hechos_iniciales_contradictorios_val011():
+    """VAL-011: Dos hechos iniciales con el mismo nombre y valores incompatibles generan ERROR."""
+    h1 = Hecho(nombre="router_encendido", valor="true", tipo_dato=TipoDato.BOOLEANO, es_inicial=True)
+    h2 = Hecho(nombre="router_encendido", valor="false", tipo_dato=TipoDato.BOOLEANO, es_inicial=True)
+    v_out = Variable(nombre="salida")
+    r1 = Regla(
+        nombre="R1",
+        condiciones=[Condicion(hecho_id=h1.id, valor_esperado="true")],
+        conclusiones=[Conclusion(variable_resultante_id=v_out.id, valor_resultante="ok")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [h1, h2], [v_out], [r1])
+    codigos = [inc.codigo for inc in resultado.incidencias]
+    assert "VAL-011" in codigos
+    inc = next(i for i in resultado.incidencias if i.codigo == "VAL-011")
+    assert inc.severidad == SeveridadIncidencia.ERROR.value
+    assert inc.tipo == "LOGICO"
+
+
+def test_no_contradiccion_hechos_iniciales_con_mismo_valor():
+    """Dos hechos iniciales con el mismo valor no generan VAL-011."""
+    h1 = Hecho(nombre="router_encendido", valor="true", tipo_dato=TipoDato.BOOLEANO, es_inicial=True)
+    h2 = Hecho(nombre="router_encendido", valor="true", tipo_dato=TipoDato.BOOLEANO, es_inicial=True)
+    v_out = Variable(nombre="salida")
+    r1 = Regla(
+        nombre="R1",
+        condiciones=[Condicion(hecho_id=h1.id, valor_esperado="true")],
+        conclusiones=[Conclusion(variable_resultante_id=v_out.id, valor_resultante="ok")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [h1, h2], [v_out], [r1])
+    assert not [i for i in resultado.incidencias if i.codigo == "VAL-011"]
+
+
+def test_deteccion_contradiccion_directa_satisfacibilidad_val012():
+    """
+    VAL-012: R1 (temp > 38 -> estado=enfermo) y R2 (temp > 40 -> estado=sano).
+    Condiciones superpuestas para temp > 40, conclusiones opuestas -> ERROR VAL-012.
+    """
+    v_temp = Variable(nombre="temperatura", tipo_dato=TipoDato.DECIMAL)
+    v_estado = Variable(nombre="estado", tipo_dato=TipoDato.TEXTO)
+
+    r1 = Regla(
+        nombre="R01",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR, valor_esperado="38")],
+        conclusiones=[Conclusion(variable_resultante_id=v_estado.id, valor_resultante="enfermo")],
+    )
+    r2 = Regla(
+        nombre="R02",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR, valor_esperado="40")],
+        conclusiones=[Conclusion(variable_resultante_id=v_estado.id, valor_resultante="sano")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [], [v_temp, v_estado], [r1, r2])
+    codigos = [inc.codigo for inc in resultado.incidencias]
+    assert "VAL-012" in codigos
+    inc = next(i for i in resultado.incidencias if i.codigo == "VAL-012")
+    assert inc.severidad == SeveridadIncidencia.ERROR.value
+    assert inc.tipo == "LOGICO"
+
+
+def test_no_contradiccion_si_condiciones_son_disjuntas():
+    """Reglas con rangos numéricos disjuntos (temp > 40 vs temp < 35) no generan conflicto VAL-012."""
+    v_temp = Variable(nombre="temperatura", tipo_dato=TipoDato.DECIMAL)
+    v_estado = Variable(nombre="estado", tipo_dato=TipoDato.TEXTO)
+
+    r1 = Regla(
+        nombre="R01",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR, valor_esperado="40")],
+        conclusiones=[Conclusion(variable_resultante_id=v_estado.id, valor_resultante="fiebre_alta")],
+    )
+    r2 = Regla(
+        nombre="R02",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MENOR, valor_esperado="35")],
+        conclusiones=[Conclusion(variable_resultante_id=v_estado.id, valor_resultante="hipotermia")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [], [v_temp, v_estado], [r1, r2])
+    assert not [i for i in resultado.incidencias if i.codigo == "VAL-012"]
+
+
+def test_deteccion_contradiccion_indirecta_cadenas_val013():
+    """
+    VAL-013:
+    R01: temp >= 38 -> tiene_fiebre = true
+    R02: tiene_fiebre = true -> estado = enfermo
+    R03: temp >= 38 -> estado = sano
+    """
+    v_temp = Variable(nombre="temperatura", tipo_dato=TipoDato.DECIMAL)
+    v_fiebre = Variable(nombre="tiene_fiebre", tipo_dato=TipoDato.BOOLEANO)
+    v_estado = Variable(nombre="estado", tipo_dato=TipoDato.TEXTO)
+
+    r1 = Regla(
+        nombre="R01",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR_IGUAL, valor_esperado="38")],
+        conclusiones=[Conclusion(variable_resultante_id=v_fiebre.id, valor_resultante="true")],
+    )
+    r2 = Regla(
+        nombre="R02",
+        condiciones=[Condicion(variable_id=v_fiebre.id, operador=OperadorCondicion.IGUAL, valor_esperado="true")],
+        conclusiones=[Conclusion(variable_resultante_id=v_estado.id, valor_resultante="enfermo")],
+    )
+    r3 = Regla(
+        nombre="R03",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR_IGUAL, valor_esperado="38")],
+        conclusiones=[Conclusion(variable_resultante_id=v_estado.id, valor_resultante="sano")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [], [v_temp, v_fiebre, v_estado], [r1, r2, r3])
+    codigos = [inc.codigo for inc in resultado.incidencias]
+    assert "VAL-013" in codigos
+    inc = next(i for i in resultado.incidencias if i.codigo == "VAL-013")
+    assert inc.severidad == SeveridadIncidencia.ERROR.value
+    assert inc.tipo == "LOGICO"
+
+
+def test_deteccion_contradiccion_hecho_regla_val014():
+    """VAL-014: Una regla concluye un valor que contradice un hecho inicial afirmado."""
+    h_conexion = Hecho(nombre="conexion_internet", valor="true", tipo_dato=TipoDato.BOOLEANO, es_inicial=True)
+    v_ping = Variable(nombre="ping_internet", tipo_dato=TipoDato.BOOLEANO)
+
+    r1 = Regla(
+        nombre="R_Corte",
+        condiciones=[Condicion(variable_id=v_ping.id, operador=OperadorCondicion.IGUAL, valor_esperado="false")],
+        conclusiones=[Conclusion(hecho_resultante_id=h_conexion.id, valor_resultante="false")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [h_conexion], [v_ping], [r1])
+    codigos = [inc.codigo for inc in resultado.incidencias]
+    assert "VAL-014" in codigos
+    inc = next(i for i in resultado.incidencias if i.codigo == "VAL-014")
+    assert inc.severidad == SeveridadIncidencia.ERROR.value
+
+
+def test_deteccion_condicion_imposible_val015():
+    """VAL-015: Regla con condiciones mutuamente excluyentes (temp > 40 AND temp < 30)."""
+    v_temp = Variable(nombre="temperatura", tipo_dato=TipoDato.DECIMAL)
+    v_res = Variable(nombre="riesgo", tipo_dato=TipoDato.TEXTO)
+
+    r1 = Regla(
+        nombre="R_Imposible",
+        condiciones=[
+            Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR, valor_esperado="40"),
+            Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MENOR, valor_esperado="30"),
+        ],
+        conclusiones=[Conclusion(variable_resultante_id=v_res.id, valor_resultante="alto")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [], [v_temp, v_res], [r1])
+    codigos = [inc.codigo for inc in resultado.incidencias]
+    assert "VAL-015" in codigos
+    inc = next(i for i in resultado.incidencias if i.codigo == "VAL-015")
+    assert inc.severidad == SeveridadIncidencia.ERROR.value
+
+
+def test_deteccion_condicion_imposible_booleana_val015():
+    """VAL-015: Regla que exige activo = true AND activo = false."""
+    h_activo = Hecho(nombre="activo", tipo_dato=TipoDato.BOOLEANO, es_inicial=True)
+    v_res = Variable(nombre="resultado", tipo_dato=TipoDato.TEXTO)
+
+    r1 = Regla(
+        nombre="R_Bool_Imposible",
+        condiciones=[
+            Condicion(hecho_id=h_activo.id, operador=OperadorCondicion.IGUAL, valor_esperado="true"),
+            Condicion(hecho_id=h_activo.id, operador=OperadorCondicion.IGUAL, valor_esperado="false"),
+        ],
+        conclusiones=[Conclusion(variable_resultante_id=v_res.id, valor_resultante="imposible")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [h_activo], [v_res], [r1])
+    assert "VAL-015" in [i.codigo for i in resultado.incidencias]
+
+
+def test_deteccion_valor_fuera_de_dominio_opcion_val017():
+    """VAL-017: Regla asigna un valor que no pertenece a las opciones permitidas del hecho."""
+    v_temp = Variable(nombre="temperatura", tipo_dato=TipoDato.DECIMAL)
+    h_riesgo = Hecho(
+        nombre="nivel_riesgo",
+        tipo_dato=TipoDato.OPCION,
+        opciones=["bajo", "medio", "alto"],
+        es_inicial=False,
+    )
+
+    r1 = Regla(
+        nombre="R_Dominio",
+        condiciones=[Condicion(variable_id=v_temp.id, operador=OperadorCondicion.MAYOR, valor_esperado="40")],
+        conclusiones=[Conclusion(hecho_resultante_id=h_riesgo.id, valor_resultante="extremo")],
+    )
+
+    resultado = MotorValidacion.validar(uuid4(), [h_riesgo], [v_temp], [r1])
+    codigos = [inc.codigo for inc in resultado.incidencias]
+    assert "VAL-017" in codigos
+    inc = next(i for i in resultado.incidencias if i.codigo == "VAL-017")
+    assert inc.severidad == SeveridadIncidencia.ERROR.value
+
+
+@pytest.mark.django_db
+def test_api_rest_deteccion_nuevas_inconsistencias_logicas(api_client, se_con_base):
+    """Integración API: Validación de base con condiciones imposibles y contradicciones de dominio."""
+    se, bc = se_con_base
+
+    v_temp = CrearVariable().ejecutar(base_conocimiento_id=bc.id, nombre="Temperatura", tipo_dato="DECIMAL")
+    h_riesgo = CrearHecho().ejecutar(
+        base_conocimiento_id=bc.id, nombre="Nivel_Riesgo", tipo_dato="OPCION", opciones=["bajo", "alto"]
+    )
+
+    r1 = CrearRegla().ejecutar(base_conocimiento_id=bc.id, nombre="Regla_Riesgo_Critico", activa=True)
+    AgregarCondicionARegla().ejecutar(
+        regla_id=r1.id, variable_id=v_temp.id, operador=">", valor_esperado="40"
+    )
+    AgregarCondicionARegla().ejecutar(
+        regla_id=r1.id, variable_id=v_temp.id, operador="<", valor_esperado="20"
+    )
+    AgregarConclusionARegla().ejecutar(
+        regla_id=r1.id, hecho_resultante_id=h_riesgo.id, valor_resultante="critico_no_permitido"
+    )
+
+    url_val = reverse("validacion:base_conocimiento_validar", kwargs={"id": bc.id})
+    resp = api_client.post(url_val)
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert resp.data["data"]["es_valida"] is False
+    assert resp.data["data"]["total_errores"] >= 2
+
+    # Verificar reporte filtrado por tipo LOGICO
+    val_id = resp.data["data"]["id"]
+    url_inc = reverse("validacion:validacion_incidencias_list", kwargs={"id": val_id})
+    resp_inc = api_client.get(f"{url_inc}?tipo=LOGICO")
+    assert resp_inc.status_code == status.HTTP_200_OK
+    codigos = [item["codigo"] for item in resp_inc.data["data"]]
+    assert "VAL-015" in codigos
