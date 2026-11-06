@@ -104,6 +104,7 @@ class TipoIncidencia(StrEnum):
     SEMANTICA = "SEMANTICA"
     REFERENCIAL = "REFERENCIAL"
     CICLO = "CICLO"
+    LOGICO = "LOGICO"
 
     @classmethod
     def choices(cls):
