@@ -40,9 +40,25 @@ class CondicionSalidaSerializer(serializers.Serializer):
     regla_id = serializers.UUIDField(allow_null=True)
     variable_id = serializers.UUIDField(allow_null=True)
     hecho_id = serializers.UUIDField(allow_null=True)
+    variable_nombre = serializers.SerializerMethodField()
+    hecho_nombre = serializers.SerializerMethodField()
     operador = serializers.CharField()
     valor_esperado = serializers.CharField()
     orden = serializers.IntegerField()
+
+    def get_variable_nombre(self, obj):
+        if hasattr(obj, "variable_nombre") and obj.variable_nombre:
+            return obj.variable_nombre
+        if hasattr(obj, "variable") and obj.variable:
+            return obj.variable.nombre
+        return None
+
+    def get_hecho_nombre(self, obj):
+        if hasattr(obj, "hecho_nombre") and obj.hecho_nombre:
+            return obj.hecho_nombre
+        if hasattr(obj, "hecho") and obj.hecho:
+            return obj.hecho.nombre
+        return None
 
 
 # =====================================================================
@@ -75,7 +91,23 @@ class ConclusionSalidaSerializer(serializers.Serializer):
     regla_id = serializers.UUIDField(allow_null=True)
     hecho_resultante_id = serializers.UUIDField(allow_null=True)
     variable_resultante_id = serializers.UUIDField(allow_null=True)
+    variable_nombre = serializers.SerializerMethodField()
+    hecho_nombre = serializers.SerializerMethodField()
     valor_resultante = serializers.CharField()
+
+    def get_variable_nombre(self, obj):
+        if hasattr(obj, "variable_nombre") and obj.variable_nombre:
+            return obj.variable_nombre
+        if hasattr(obj, "variable_resultante") and obj.variable_resultante:
+            return obj.variable_resultante.nombre
+        return None
+
+    def get_hecho_nombre(self, obj):
+        if hasattr(obj, "hecho_nombre") and obj.hecho_nombre:
+            return obj.hecho_nombre
+        if hasattr(obj, "hecho_resultante") and obj.hecho_resultante:
+            return obj.hecho_resultante.nombre
+        return None
 
 
 # =====================================================================
@@ -227,3 +259,45 @@ class BaseConocimientoSalidaSerializer(serializers.Serializer):
     version = serializers.IntegerField()
     creada_en = serializers.DateTimeField(allow_null=True)
     actualizada_en = serializers.DateTimeField(allow_null=True)
+
+
+# =====================================================================
+# REGLA COMPLETA COMPOSITE SERIALIZERS
+# =====================================================================
+
+class CondicionItemInputSerializer(serializers.Serializer):
+    operador = serializers.ChoiceField(choices=OperadorCondicion.choices(), default="=")
+    valor_esperado = serializers.CharField(max_length=255)
+    variable_nombre = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    variable_id = serializers.UUIDField(required=False, allow_null=True)
+    hecho_id = serializers.UUIDField(required=False, allow_null=True)
+    tipo_dato = serializers.CharField(max_length=50, required=False, default="ENTERO", allow_blank=True)
+    orden = serializers.IntegerField(required=False, default=1)
+
+
+class ConclusionItemInputSerializer(serializers.Serializer):
+    valor_resultante = serializers.CharField(max_length=255)
+    variable_nombre = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    variable_resultante_id = serializers.UUIDField(required=False, allow_null=True)
+    hecho_resultante_id = serializers.UUIDField(required=False, allow_null=True)
+    tipo_dato = serializers.CharField(max_length=50, required=False, default="TEXTO", allow_blank=True)
+
+
+class ReglaCompletaEntradaSerializer(serializers.Serializer):
+    nombre = serializers.CharField(max_length=150)
+    descripcion = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    prioridad = serializers.IntegerField(min_value=0, default=10)
+    factor_certeza = serializers.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        min_value=Decimal("0.0"),
+        max_value=Decimal("1.0"),
+    )
+    activa = serializers.BooleanField(default=True)
+    condiciones = CondicionItemInputSerializer(many=True, required=False, default=list)
+    conclusiones = ConclusionItemInputSerializer(many=True, required=False, default=list)
+    posicion_x = serializers.FloatField(required=False, allow_null=True)
+    posicion_y = serializers.FloatField(required=False, allow_null=True)
+

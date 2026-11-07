@@ -128,3 +128,98 @@ def test_api_variables_es_inicial_y_pregunta(api_client, setup_bc):
     data_patch = res_patch.json()["data"]
     assert data_patch["es_inicial"] is False
     assert data_patch["pregunta"] is None
+
+
+@pytest.mark.django_db
+def test_api_crear_regla_completa_atomica(api_client, setup_bc):
+    """Prueba la creación atómica de una regla con condiciones y conclusiones en 1 solo request."""
+    bc_id = setup_bc["bc_id"]
+
+    payload = {
+        "nombre": "R1_Test_Atomica",
+        "prioridad": 15,
+        "descripcion": "Regla creada de forma atómica",
+        "condiciones": [
+            {
+                "variable_nombre": "x",
+                "operador": "=",
+                "valor_esperado": "0",
+                "orden": 1,
+            }
+        ],
+        "conclusiones": [
+            {
+                "variable_nombre": "P",
+                "valor_resultante": "a",
+            }
+        ],
+        "posicion_x": 350.0,
+        "posicion_y": 180.0,
+    }
+
+    res = api_client.post(
+        f"/api/v1/bases-conocimiento/{bc_id}/reglas-completas/",
+        data=payload,
+        format="json",
+    )
+    assert res.status_code == status.HTTP_201_CREATED
+    data = res.json()["data"]
+    assert data["nombre"] == "R1_Test_Atomica"
+    assert data["prioridad"] == 15
+    assert len(data["condiciones"]) == 1
+    assert data["condiciones"][0]["operador"] == "="
+    assert data["condiciones"][0]["valor_esperado"] == "0"
+    assert len(data["conclusiones"]) == 1
+    assert data["conclusiones"][0]["valor_resultante"] == "a"
+
+
+@pytest.mark.django_db
+def test_api_actualizar_regla_completa_atomica(api_client, setup_bc):
+    """Prueba la actualización atómica de una regla con edición de condiciones y conclusiones."""
+    bc_id = setup_bc["bc_id"]
+
+    # 1. Crear regla inicial
+    crear_payload = {
+        "nombre": "R_Update_Init",
+        "prioridad": 10,
+        "condiciones": [{"variable_nombre": "x", "operador": "=", "valor_esperado": "0"}],
+        "conclusiones": [{"variable_nombre": "P", "valor_resultante": "a"}],
+    }
+    res_crear = api_client.post(
+        f"/api/v1/bases-conocimiento/{bc_id}/reglas-completas/",
+        data=crear_payload,
+        format="json",
+    )
+    assert res_crear.status_code == status.HTTP_201_CREATED
+    regla_id = res_crear.json()["data"]["id"]
+
+    # 2. Actualizar regla completa (nuevo nombre, dos condiciones con tipos, nueva conclusión)
+    update_payload = {
+        "nombre": "R_Update_Modificada",
+        "prioridad": 20,
+        "descripcion": "Regla editada desde el panel de propiedades",
+        "condiciones": [
+            {"variable_nombre": "x", "operador": ">", "valor_esperado": "5", "tipo_dato": "ENTERO"},
+            {"variable_nombre": "y", "operador": "=", "valor_esperado": "si", "tipo_dato": "BOOLEANO"},
+        ],
+        "conclusiones": [
+            {"variable_nombre": "Z", "valor_resultante": "ok", "tipo_dato": "TEXTO"}
+        ],
+    }
+    res_put = api_client.put(
+        f"/api/v1/reglas/{regla_id}/completa/",
+        data=update_payload,
+        format="json",
+    )
+    assert res_put.status_code == status.HTTP_200_OK
+    data = res_put.json()["data"]
+    assert data["nombre"] == "R_Update_Modificada"
+    assert data["prioridad"] == 20
+    assert len(data["condiciones"]) == 2
+    assert data["condiciones"][0]["operador"] == ">"
+    assert data["condiciones"][0]["valor_esperado"] == "5"
+    assert data["condiciones"][1]["operador"] == "="
+    assert data["condiciones"][1]["valor_esperado"] == "si"
+    assert len(data["conclusiones"]) == 1
+    assert data["conclusiones"][0]["valor_resultante"] == "ok"
+

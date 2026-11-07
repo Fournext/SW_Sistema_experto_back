@@ -20,6 +20,7 @@ from apps.base_conocimiento.serializers import (
     ReglaEntradaSerializer,
     ReglaParcialEntradaSerializer,
     ReglaSalidaSerializer,
+    ReglaCompletaEntradaSerializer,
     CondicionEntradaSerializer,
     CondicionSalidaSerializer,
     ConclusionEntradaSerializer,
@@ -38,6 +39,8 @@ from apps.base_conocimiento.services import (
     ListarVariables,
     EliminarVariable,
     CrearRegla,
+    CrearReglaCompleta,
+    ActualizarReglaCompleta,
     ActualizarRegla,
     ObtenerRegla,
     ListarReglas,
@@ -528,3 +531,62 @@ class ConclusionDetailAPIView(APIView):
         caso_uso = EliminarConclusion()
         caso_uso.ejecutar(id_conclusion=id)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ReglaCompletaCreateAPIView(APIView):
+    """Crear una regla completa de forma atómica con sus condiciones y conclusiones."""
+
+    @extend_schema(
+        summary="Crear regla completa (atómica con condiciones y conclusiones)",
+        request=ReglaCompletaEntradaSerializer,
+        responses={201: ReglaSalidaSerializer, 400: OpenApiResponse(description="Datos inválidos")},
+        tags=["Reglas"],
+    )
+    def post(self, request, id: UUID):
+        serializer = ReglaCompletaEntradaSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        caso_uso = CrearReglaCompleta()
+        regla = caso_uso.ejecutar(
+            base_conocimiento_id=id,
+            nombre=serializer.validated_data["nombre"],
+            prioridad=serializer.validated_data.get("prioridad", 10),
+            descripcion=serializer.validated_data.get("descripcion"),
+            factor_certeza=serializer.validated_data.get("factor_certeza"),
+            activa=serializer.validated_data.get("activa", True),
+            condiciones=serializer.validated_data.get("condiciones", []),
+            conclusiones=serializer.validated_data.get("conclusiones", []),
+            posicion_x=serializer.validated_data.get("posicion_x"),
+            posicion_y=serializer.validated_data.get("posicion_y"),
+        )
+        datos = ReglaSalidaSerializer(regla).data
+        return respuesta_creada(datos=datos, mensaje="Regla completa creada correctamente.")
+
+
+class ReglaCompletaDetailAPIView(APIView):
+    """Actualizar una regla completa de forma atómica con sus condiciones y conclusiones."""
+
+    @extend_schema(
+        summary="Actualizar regla completa con sus condiciones y conclusiones",
+        request=ReglaCompletaEntradaSerializer,
+        responses={200: ReglaSalidaSerializer, 400: OpenApiResponse(description="Datos inválidos")},
+        tags=["Reglas"],
+    )
+    def put(self, request, id: UUID):
+        serializer = ReglaCompletaEntradaSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        caso_uso = ActualizarReglaCompleta()
+        regla = caso_uso.ejecutar(
+            id_regla=id,
+            nombre=serializer.validated_data["nombre"],
+            prioridad=serializer.validated_data.get("prioridad", 10),
+            descripcion=serializer.validated_data.get("descripcion"),
+            factor_certeza=serializer.validated_data.get("factor_certeza"),
+            activa=serializer.validated_data.get("activa", True),
+            condiciones=serializer.validated_data.get("condiciones", []),
+            conclusiones=serializer.validated_data.get("conclusiones", []),
+        )
+        datos = ReglaSalidaSerializer(regla).data
+        return respuesta_exitosa(datos=datos, mensaje="Regla completa actualizada correctamente.")
+

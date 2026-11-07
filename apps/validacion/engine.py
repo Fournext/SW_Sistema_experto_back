@@ -160,16 +160,16 @@ class MotorValidacion:
         reglas_activas = [r for r in reglas if r.activa and r.condiciones and r.conclusiones]
         for i in range(len(reglas_activas)):
             r1 = reglas_activas[i]
-            firma_cond_r1 = cls._firma_condiciones(r1)
+            firma_cond_r1 = cls._firma_condiciones(r1, mapa_hechos, mapa_variables)
 
             for j in range(i + 1, len(reglas_activas)):
                 r2 = reglas_activas[j]
-                firma_cond_r2 = cls._firma_condiciones(r2)
+                firma_cond_r2 = cls._firma_condiciones(r2, mapa_hechos, mapa_variables)
 
                 # Si tienen exactamente las mismas condiciones
                 if firma_cond_r1 == firma_cond_r2 and firma_cond_r1:
-                    firma_conc_r1 = cls._firma_conclusiones(r1)
-                    firma_conc_r2 = cls._firma_conclusiones(r2)
+                    firma_conc_r1 = cls._firma_conclusiones(r1, mapa_hechos, mapa_variables)
+                    firma_conc_r2 = cls._firma_conclusiones(r2, mapa_hechos, mapa_variables)
 
                     if firma_conc_r1 == firma_conc_r2:
                         # VAL-001: Reglas duplicadas
@@ -191,13 +191,30 @@ class MotorValidacion:
                         )
                     else:
                         # VAL-002: Reglas contradictorias (mismas condiciones pero conclusiones distintas)
-                        # Comprobar si apuntan a los mismos destinos con valores diferentes
-                        destinos_r1 = {c.variable_resultante_id or c.hecho_resultante_id: c.valor_resultante for c in r1.conclusiones}
-                        destinos_r2 = {c.variable_resultante_id or c.hecho_resultante_id: c.valor_resultante for c in r2.conclusiones}
+                        def _obtener_nombre_dest_val002(conc):
+                            dest_id = conc.variable_resultante_id or conc.hecho_resultante_id
+                            if dest_id:
+                                obj = mapa_variables.get(dest_id) or mapa_hechos.get(dest_id)
+                                if obj and obj.nombre:
+                                    return obj.nombre.strip().casefold()
+                            if hasattr(conc, "variable_nombre") and conc.variable_nombre:
+                                return str(conc.variable_nombre).strip().casefold()
+                            return str(dest_id) if dest_id else ""
+
+                        destinos_r1 = {
+                            _obtener_nombre_dest_val002(c): c.valor_resultante
+                            for c in r1.conclusiones
+                            if c.valor_resultante is not None
+                        }
+                        destinos_r2 = {
+                            _obtener_nombre_dest_val002(c): c.valor_resultante
+                            for c in r2.conclusiones
+                            if c.valor_resultante is not None
+                        }
 
                         conflictos_dest = set(destinos_r1.keys()).intersection(destinos_r2.keys())
                         for dest in conflictos_dest:
-                            if dest and destinos_r1[dest] != destinos_r2[dest]:
+                            if dest and str(destinos_r1[dest]).strip().lower() != str(destinos_r2[dest]).strip().lower():
                                 incidencias.append(
                                     IncidenciaValidacion(
                                         codigo="VAL-002",
@@ -209,7 +226,7 @@ class MotorValidacion:
                                         descripcion=(
                                             f"Regla potencialmente contradictoria con '{r1.nombre}': "
                                             f"ante idénticas condiciones, una asigna '{destinos_r1[dest]}' "
-                                            f"y la otra '{destinos_r2[dest]}'."
+                                            f"y la otra '{destinos_r2[dest]}' a '{dest}'."
                                         ),
                                         posible_causa="Inconsistencia semántica en la base de conocimiento.",
                                         sugerencia="Revise las condiciones o diferencie los antecedentes para evitar ambigüedad.",
@@ -326,7 +343,7 @@ class MotorValidacion:
         # 10. Contradicción Hecho Inicial vs Regla (VAL-014)
         # -------------------------------------------------------------
         cls._analizar_contradicciones_hecho_regla(
-            hechos, reglas_activas, mapa_hechos, incidencias
+            hechos, variables, reglas_activas, mapa_hechos, mapa_variables, incidencias
         )
 
         # -------------------------------------------------------------
@@ -419,18 +436,53 @@ class MotorValidacion:
                 )
 
     @staticmethod
-    def _firma_condiciones(r: Regla) -> frozenset:
+    def _firma_condiciones(
+        r: Regla,
+        mapa_hechos: Optional[Dict[UUID, Hecho]] = None,
+        mapa_variables: Optional[Dict[UUID, Variable]] = None,
+    ) -> frozenset:
         firmas = []
+        mapa_h = mapa_hechos or {}
+        mapa_v = mapa_variables or {}
         for c in r.condiciones or []:
-            sujeto = str(c.hecho_id or c.variable_id or "")
-            firmas.append((sujeto, str(c.operador), str(c.valor_esperado).strip().lower()))
+            sujeto_id = c.hecho_id or c.variable_id
+            sujeto_nom = None
+            if sujeto_id:
+                obj = mapa_h.get(sujeto_id) or mapa_v.get(sujeto_id)
+                if obj and obj.nombre:
+                    sujeto_nom = obj.nombre.strip().casefold()
+            if not sujeto_nom and hasattr(c, "variable_nombre") and c.variable_nombre:
+                sujeto_nom = str(c.variable_nombre).strip().casefold()
+            if not sujeto_nom and hasattr(c, "referencia") and c.referencia:
+                sujeto_nom = str(c.referencia).strip().casefold()
+            sujeto = sujeto_nom or str(sujeto_id or "")
+
+            op = c.operador.value if hasattr(c.operador, "value") else str(c.operador)
+            firmas.append((sujeto, str(op).strip(), str(c.valor_esperado).strip().lower()))
         return frozenset(firmas)
 
     @staticmethod
-    def _firma_conclusiones(r: Regla) -> frozenset:
+    def _firma_conclusiones(
+        r: Regla,
+        mapa_hechos: Optional[Dict[UUID, Hecho]] = None,
+        mapa_variables: Optional[Dict[UUID, Variable]] = None,
+    ) -> frozenset:
         firmas = []
+        mapa_h = mapa_hechos or {}
+        mapa_v = mapa_variables or {}
         for c in r.conclusiones or []:
-            dest = str(c.hecho_resultante_id or c.variable_resultante_id or "")
+            dest_id = c.hecho_resultante_id or c.variable_resultante_id
+            dest_nom = None
+            if dest_id:
+                obj = mapa_h.get(dest_id) or mapa_v.get(dest_id)
+                if obj and obj.nombre:
+                    dest_nom = obj.nombre.strip().casefold()
+            if not dest_nom and hasattr(c, "variable_nombre") and c.variable_nombre:
+                dest_nom = str(c.variable_nombre).strip().casefold()
+            if not dest_nom and hasattr(c, "destino") and c.destino:
+                dest_nom = str(c.destino).strip().casefold()
+            dest = dest_nom or str(dest_id or "")
+
             firmas.append((dest, str(c.valor_resultante).strip().lower()))
         return frozenset(firmas)
 
@@ -660,17 +712,24 @@ class MotorValidacion:
         mapa_variables: Dict[UUID, Variable],
     ) -> bool:
         """Determina si dos conjuntos de condiciones son conjuntamente satisfacibles."""
-        por_sujeto: Dict[UUID, List[Condicion]] = {}
+        por_sujeto: Dict[str, List[Condicion]] = {}
         for c in (conds_r1 or []) + (conds_r2 or []):
             sujeto_id = c.hecho_id or c.variable_id
-            if sujeto_id:
-                por_sujeto.setdefault(sujeto_id, []).append(c)
+            obj = mapa_hechos.get(sujeto_id) or mapa_variables.get(sujeto_id)
+            sujeto_key = obj.nombre.strip().casefold() if obj and obj.nombre else str(sujeto_id or "")
+            if not sujeto_key and hasattr(c, "variable_nombre") and c.variable_nombre:
+                sujeto_key = str(c.variable_nombre).strip().casefold()
+            if sujeto_key:
+                por_sujeto.setdefault(sujeto_key, []).append(c)
 
-        for sujeto_id, conds in por_sujeto.items():
+        for sujeto_key, conds in por_sujeto.items():
             if len(conds) < 2:
                 continue
 
-            obj = mapa_hechos.get(sujeto_id) or mapa_variables.get(sujeto_id)
+            obj = next(
+                (mapa_hechos.get(c.hecho_id or c.variable_id) or mapa_variables.get(c.hecho_id or c.variable_id) for c in conds if (c.hecho_id or c.variable_id)),
+                None,
+            )
             tipo_str = str(getattr(obj, "tipo_dato", "")).upper()
 
             if "ENTERO" in tipo_str or "DECIMAL" in tipo_str:
@@ -712,17 +771,26 @@ class MotorValidacion:
                 r2 = reglas_activas[j]
 
                 # Si las condiciones son idénticas, ya fueron reportadas en VAL-002
-                if cls._firma_condiciones(r1) == cls._firma_condiciones(r2):
+                if cls._firma_condiciones(r1, mapa_hechos, mapa_variables) == cls._firma_condiciones(r2, mapa_hechos, mapa_variables):
                     continue
 
-                # Verificar si concluyen valores opuestos sobre el mismo destino
+                def _obtener_nombre_dest_val012(conc):
+                    dest_id = conc.variable_resultante_id or conc.hecho_resultante_id
+                    if dest_id:
+                        obj = mapa_variables.get(dest_id) or mapa_hechos.get(dest_id)
+                        if obj and obj.nombre:
+                            return obj.nombre.strip().casefold()
+                    if hasattr(conc, "variable_nombre") and conc.variable_nombre:
+                        return str(conc.variable_nombre).strip().casefold()
+                    return str(dest_id) if dest_id else ""
+
                 destinos_r1 = {
-                    (c.variable_resultante_id or c.hecho_resultante_id): c.valor_resultante
+                    _obtener_nombre_dest_val012(c): c.valor_resultante
                     for c in (r1.conclusiones or [])
                     if c.valor_resultante is not None
                 }
                 destinos_r2 = {
-                    (c.variable_resultante_id or c.hecho_resultante_id): c.valor_resultante
+                    _obtener_nombre_dest_val012(c): c.valor_resultante
                     for c in (r2.conclusiones or [])
                     if c.valor_resultante is not None
                 }
@@ -742,8 +810,6 @@ class MotorValidacion:
                     r1.condiciones, r2.condiciones, mapa_hechos, mapa_variables
                 ):
                     for dest in destinos_conflictivos:
-                        obj_dest = mapa_hechos.get(dest) or mapa_variables.get(dest)
-                        nom_dest = obj_dest.nombre if obj_dest else str(dest)
                         incidencias.append(
                             IncidenciaValidacion(
                                 codigo="VAL-012",
@@ -754,7 +820,7 @@ class MotorValidacion:
                                 entidad_nombre=f"{r1.nombre} vs {r2.nombre}",
                                 descripcion=(
                                     f"Las reglas '{r1.nombre}' y '{r2.nombre}' pueden activarse simultáneamente "
-                                    f"ante condiciones compatibles y asignan valores contradictorios a '{nom_dest}' "
+                                    f"ante condiciones compatibles y asignan valores contradictorios a '{dest}' "
                                     f"('{destinos_r1[dest]}' vs '{destinos_r2[dest]}')."
                                 ),
                                 posible_causa="Condiciones con regiones de activación superpuestas pero conclusiones opuestas.",
@@ -849,22 +915,76 @@ class MotorValidacion:
     def _analizar_contradicciones_hecho_regla(
         cls,
         hechos: List[Hecho],
+        variables: List[Variable],
         reglas_activas: List[Regla],
         mapa_hechos: Dict[UUID, Hecho],
+        mapa_variables: Dict[UUID, Variable],
         incidencias: List[IncidenciaValidacion],
     ):
-        """VAL-014: Detecta cuando una regla concluye un valor incompatible con un hecho inicial afirmado."""
+        """VAL-014: Detecta cuando una regla concluye un valor incompatible con un hecho o variable inicial afirmado."""
         hechos_iniciales_con_valor = {
             h.id: h
             for h in hechos
             if getattr(h, "es_inicial", True) and h.valor is not None and str(h.valor).strip()
         }
+        nombres_hechos_iniciales = {
+            h.nombre.strip().casefold(): h
+            for h in hechos_iniciales_con_valor.values()
+            if getattr(h, "nombre", None)
+        }
+
+        variables_iniciales_con_valor = {
+            v.id: v
+            for v in variables
+            if (getattr(v, "es_inicial", False) or getattr(v, "valor_defecto", None))
+            and str(getattr(v, "valor_defecto", "")).strip()
+        }
+        nombres_variables_iniciales = {
+            v.nombre.strip().casefold(): v
+            for v in variables_iniciales_con_valor.values()
+            if getattr(v, "nombre", None)
+        }
 
         for r in reglas_activas:
             for conc in r.conclusiones or []:
+                if conc.valor_resultante is None:
+                    continue
+
+                obj_dest = None
+                if conc.hecho_resultante_id:
+                    obj_dest = mapa_hechos.get(conc.hecho_resultante_id)
+                elif conc.variable_resultante_id:
+                    obj_dest = mapa_variables.get(conc.variable_resultante_id)
+
+                nom_dest = ""
+                if obj_dest and obj_dest.nombre:
+                    nom_dest = obj_dest.nombre.strip().casefold()
+                elif hasattr(conc, "variable_nombre") and conc.variable_nombre:
+                    nom_dest = str(conc.variable_nombre).strip().casefold()
+
+                inicial_entidad = None
+                val_inicial = None
+                nombre_mostrado = (obj_dest.nombre if obj_dest else "") or nom_dest or "Desconocido"
+
                 if conc.hecho_resultante_id and conc.hecho_resultante_id in hechos_iniciales_con_valor:
-                    h_inicial = hechos_iniciales_con_valor[conc.hecho_resultante_id]
-                    val_inicial_bool = cls._normalizar_booleano(h_inicial.valor)
+                    inicial_entidad = hechos_iniciales_con_valor[conc.hecho_resultante_id]
+                    val_inicial = inicial_entidad.valor
+                    nombre_mostrado = inicial_entidad.nombre
+                elif conc.variable_resultante_id and conc.variable_resultante_id in variables_iniciales_con_valor:
+                    inicial_entidad = variables_iniciales_con_valor[conc.variable_resultante_id]
+                    val_inicial = getattr(inicial_entidad, "valor_defecto", None)
+                    nombre_mostrado = inicial_entidad.nombre
+                elif nom_dest in nombres_hechos_iniciales:
+                    inicial_entidad = nombres_hechos_iniciales[nom_dest]
+                    val_inicial = inicial_entidad.valor
+                    nombre_mostrado = inicial_entidad.nombre
+                elif nom_dest in nombres_variables_iniciales:
+                    inicial_entidad = nombres_variables_iniciales[nom_dest]
+                    val_inicial = getattr(inicial_entidad, "valor_defecto", None)
+                    nombre_mostrado = inicial_entidad.nombre
+
+                if inicial_entidad and val_inicial is not None:
+                    val_inicial_bool = cls._normalizar_booleano(val_inicial)
                     val_conc_bool = cls._normalizar_booleano(conc.valor_resultante)
 
                     difieren = False
@@ -873,7 +993,7 @@ class MotorValidacion:
                     else:
                         difieren = (
                             str(conc.valor_resultante).strip().lower()
-                            != str(h_inicial.valor).strip().lower()
+                            != str(val_inicial).strip().lower()
                         )
 
                     if difieren:
@@ -886,11 +1006,11 @@ class MotorValidacion:
                                 entidad_id=r.id,
                                 entidad_nombre=r.nombre,
                                 descripcion=(
-                                    f"La regla '{r.nombre}' concluye un valor '{conc.valor_resultante}' para el hecho "
-                                    f"'{h_inicial.nombre}' que contradice directamente su valor inicial ('{h_inicial.valor}')."
+                                    f"La regla '{r.nombre}' concluye un valor '{conc.valor_resultante}' para "
+                                    f"'{nombre_mostrado}' que contradice directamente su valor inicial ('{val_inicial}')."
                                 ),
                                 posible_causa="Incompatibilidad semántica entre el postulado inicial y el consecuente de la regla.",
-                                sugerencia="Revise si el hecho inicial debe actualizarse o si la regla debe restringir sus condiciones.",
+                                sugerencia="Revise si el hecho o variable inicial debe actualizarse o si la regla debe restringir sus condiciones.",
                             )
                         )
 

@@ -10,6 +10,8 @@ from apps.base_conocimiento.views import (
     CondicionDetailAPIView,
     HechoDetailAPIView,
     HechoListCreateAPIView,
+    ReglaCompletaCreateAPIView,
+    ReglaCompletaDetailAPIView,
     ReglaDetailAPIView,
     ReglaListCreateAPIView,
     VariableDetailAPIView,
@@ -36,7 +38,13 @@ urlpatterns = [
 
     # Reglas
     path("bases-conocimiento/<uuid:id>/reglas/", ReglaListCreateAPIView.as_view(), name="regla_list_create"),
+    path(
+        "bases-conocimiento/<uuid:id>/reglas-completas/",
+        ReglaCompletaCreateAPIView.as_view(),
+        name="regla_completa_create",
+    ),
     path("reglas/<uuid:id>/", ReglaDetailAPIView.as_view(), name="regla_detail"),
+    path("reglas/<uuid:id>/completa/", ReglaCompletaDetailAPIView.as_view(), name="regla_completa_detail"),
 
     # Condiciones
     path("reglas/<uuid:id>/condiciones/", CondicionCreateAPIView.as_view(), name="condicion_create"),

@@ -608,3 +608,383 @@ class EliminarConclusion:
         if not conc:
             raise ConclusionNoEncontrada(id_conclusion)
         self.repo_conc.eliminar(id_conclusion)
+
+
+class CrearReglaCompleta:
+    """
+    Caso de uso transaccional para crear una Regla completa con sus Condiciones y Conclusiones.
+    Resuelve o auto-crea variables y hechos si se proporcionan por nombre.
+    """
+
+    def __init__(
+        self,
+        repo_regla: Optional[ReglaRepositorio] = None,
+        repo_bc: Optional[BaseConocimientoRepositorio] = None,
+        repo_cond: Optional[CondicionRepositorio] = None,
+        repo_conc: Optional[ConclusionRepositorio] = None,
+        repo_var: Optional[VariableRepositorio] = None,
+    ):
+        self.repo_regla = repo_regla or DjangoReglaRepositorio()
+        self.repo_bc = repo_bc or DjangoBaseConocimientoRepositorio()
+        self.repo_cond = repo_cond or DjangoCondicionRepositorio()
+        self.repo_conc = repo_conc or DjangoConclusionRepositorio()
+        self.repo_var = repo_var or DjangoVariableRepositorio()
+
+    def ejecutar(
+        self,
+        base_conocimiento_id: UUID,
+        nombre: str,
+        prioridad: int = 10,
+        descripcion: Optional[str] = None,
+        factor_certeza: Optional[Decimal] = None,
+        activa: bool = True,
+        condiciones: Optional[List[dict]] = None,
+        conclusiones: Optional[List[dict]] = None,
+        posicion_x: Optional[float] = None,
+        posicion_y: Optional[float] = None,
+    ) -> Regla:
+        from django.db import transaction
+        from apps.base_conocimiento.models import (
+            BaseConocimientoModel,
+            HechoModel,
+            VariableModel,
+        )
+        from apps.editor_visual.models import NodoVisualModel
+        from compartido.constantes.enums import (
+            OperadorCondicion,
+            TipoDato,
+            TipoNodoVisual,
+        )
+
+        nombre = nombre.strip()
+        ValidadorBaseConocimiento.validar_prioridad(prioridad)
+        ValidadorBaseConocimiento.validar_factor_certeza(factor_certeza)
+
+        bc = self.repo_bc.obtener_por_id(base_conocimiento_id)
+        if not bc:
+            raise BaseConocimientoNoEncontrada(base_conocimiento_id)
+
+        if self.repo_regla.existe_nombre_en_base(base_conocimiento_id, nombre):
+            raise ReglaDuplicadaError(nombre)
+
+        with transaction.atomic():
+            # 1. Crear Regla
+            regla_ent = Regla(
+                base_conocimiento_id=base_conocimiento_id,
+                nombre=nombre,
+                descripcion=descripcion,
+                prioridad=prioridad,
+                factor_certeza=factor_certeza,
+                activa=activa,
+            )
+            regla_guardada = self.repo_regla.guardar(regla_ent)
+
+            # 2. Procesar Condiciones (Antecedentes IF)
+            condiciones_list = condiciones or []
+            for idx, c_data in enumerate(condiciones_list, start=1):
+                operador = c_data.get("operador", "=")
+                valor_esperado = str(c_data.get("valor_esperado", ""))
+                v_id = c_data.get("variable_id")
+                h_id = c_data.get("hecho_id")
+                v_nombre = c_data.get("variable_nombre") or c_data.get("nombre")
+
+                if not v_id and not h_id and v_nombre:
+                    # Buscar variable o hecho existente
+                    v_mod = VariableModel.objects.filter(
+                        base_conocimiento_id=base_conocimiento_id,
+                        nombre__iexact=v_nombre.strip(),
+                    ).first()
+                    if not v_mod:
+                        h_mod = HechoModel.objects.filter(
+                            base_conocimiento_id=base_conocimiento_id,
+                            nombre__iexact=v_nombre.strip(),
+                        ).first()
+                        if h_mod:
+                            h_id = h_mod.id
+                        else:
+                            # Auto-crear variable con su tipo de dato correspondiente (ENTERO, DECIMAL, TEXTO, BOOLEANO, OPCION)
+                            raw_tipo = str(c_data.get("tipo_dato") or "").upper().strip()
+                            if raw_tipo == "NUMERO":
+                                tipo_dato_str = TipoDato.ENTERO.value
+                            elif raw_tipo in [td.value for td in TipoDato]:
+                                tipo_dato_str = raw_tipo
+                            else:
+                                tipo_dato_str = TipoDato.ENTERO.value
+                            v_mod = VariableModel.objects.create(
+                                base_conocimiento_id=base_conocimiento_id,
+                                nombre=v_nombre.strip(),
+                                tipo_dato=tipo_dato_str,
+                            )
+                            v_id = v_mod.id
+                    else:
+                        v_id = v_mod.id
+
+                if not v_id and not h_id:
+                    raise ValueError(f"La condición #{idx} debe especificar una variable o hecho.")
+
+                cond_ent = Condicion(
+                    regla_id=regla_guardada.id,
+                    variable_id=UUID(str(v_id)) if v_id else None,
+                    hecho_id=UUID(str(h_id)) if h_id else None,
+                    operador=OperadorCondicion(operador),
+                    valor_esperado=valor_esperado,
+                    orden=c_data.get("orden", idx),
+                )
+                self.repo_cond.guardar(cond_ent)
+
+            # 3. Procesar Conclusiones (Consecuentes THEN)
+            conclusiones_list = conclusiones or []
+            for idx, c_data in enumerate(conclusiones_list, start=1):
+                valor_resultante = str(c_data.get("valor_resultante", ""))
+                v_res_id = c_data.get("variable_resultante_id")
+                h_res_id = c_data.get("hecho_resultante_id")
+                v_nombre = c_data.get("variable_nombre") or c_data.get("destino")
+
+                if not v_res_id and not h_res_id and v_nombre:
+                    v_mod = VariableModel.objects.filter(
+                        base_conocimiento_id=base_conocimiento_id,
+                        nombre__iexact=v_nombre.strip(),
+                    ).first()
+                    if not v_mod:
+                        h_mod = HechoModel.objects.filter(
+                            base_conocimiento_id=base_conocimiento_id,
+                            nombre__iexact=v_nombre.strip(),
+                        ).first()
+                        if h_mod:
+                            h_res_id = h_mod.id
+                        else:
+                            raw_tipo_res = str(c_data.get("tipo_dato") or "").upper().strip()
+                            if raw_tipo_res == "NUMERO":
+                                tipo_dato_res = TipoDato.ENTERO.value
+                            elif raw_tipo_res in [td.value for td in TipoDato]:
+                                tipo_dato_res = raw_tipo_res
+                            else:
+                                tipo_dato_res = TipoDato.TEXTO.value
+                            v_mod = VariableModel.objects.create(
+                                base_conocimiento_id=base_conocimiento_id,
+                                nombre=v_nombre.strip(),
+                                tipo_dato=tipo_dato_res,
+                            )
+                            v_res_id = v_mod.id
+                    else:
+                        v_res_id = v_mod.id
+
+                if not v_res_id and not h_res_id:
+                    raise ValueError(f"La conclusión #{idx} debe especificar una variable o hecho resultante.")
+
+                conc_ent = Conclusion(
+                    regla_id=regla_guardada.id,
+                    variable_resultante_id=UUID(str(v_res_id)) if v_res_id else None,
+                    hecho_resultante_id=UUID(str(h_res_id)) if h_res_id else None,
+                    valor_resultante=valor_resultante,
+                )
+                self.repo_conc.guardar(conc_ent)
+
+            # 4. Crear Nodo Visual para la Regla con distribución automática en cuadrícula
+            try:
+                bc_model = BaseConocimientoModel.objects.select_related("sistema_experto").get(
+                    id=base_conocimiento_id
+                )
+                if bc_model and bc_model.sistema_experto_id:
+                    from apps.base_conocimiento.models import ReglaModel
+                    count_reglas = max(0, ReglaModel.objects.filter(base_conocimiento_id=base_conocimiento_id).count() - 1)
+                    grid_col = count_reglas % 3
+                    grid_row = count_reglas // 3
+                    auto_x = 60.0 + grid_col * 350.0
+                    auto_y = 80.0 + grid_row * 320.0
+
+                    x = posicion_x if posicion_x is not None else auto_x
+                    y = posicion_y if posicion_y is not None else auto_y
+                    NodoVisualModel.objects.update_or_create(
+                        sistema_experto_id=bc_model.sistema_experto_id,
+                        referencia_id=regla_guardada.id,
+                        defaults={
+                            "tipo": TipoNodoVisual.REGLA.value,
+                            "posicion_x": x,
+                            "posicion_y": y,
+                        },
+                    )
+            except Exception:
+                pass
+
+        # Retornar la entidad completa con condiciones y conclusiones precargadas
+        return self.repo_regla.obtener_por_id(regla_guardada.id)
+
+
+class ActualizarReglaCompleta:
+    """
+    Caso de uso transaccional para actualizar una Regla y sincronizar
+    sus Condiciones y Conclusiones (IF-THEN) de forma atómica.
+    """
+
+    def __init__(
+        self,
+        repo_regla: Optional[ReglaRepositorio] = None,
+        repo_bc: Optional[BaseConocimientoRepositorio] = None,
+        repo_cond: Optional[CondicionRepositorio] = None,
+        repo_conc: Optional[ConclusionRepositorio] = None,
+        repo_var: Optional[VariableRepositorio] = None,
+    ):
+        self.repo_regla = repo_regla or DjangoReglaRepositorio()
+        self.repo_bc = repo_bc or DjangoBaseConocimientoRepositorio()
+        self.repo_cond = repo_cond or DjangoCondicionRepositorio()
+        self.repo_conc = repo_conc or DjangoConclusionRepositorio()
+        self.repo_var = repo_var or DjangoVariableRepositorio()
+
+    def ejecutar(
+        self,
+        id_regla: UUID,
+        nombre: Optional[str] = None,
+        prioridad: Optional[int] = None,
+        descripcion: Optional[str] = None,
+        factor_certeza: Optional[Decimal] = None,
+        activa: Optional[bool] = None,
+        condiciones: Optional[List[dict]] = None,
+        conclusiones: Optional[List[dict]] = None,
+    ) -> Regla:
+        from django.db import transaction
+        from apps.base_conocimiento.models import (
+            CondicionModel,
+            ConclusionModel,
+            HechoModel,
+            VariableModel,
+        )
+        from compartido.constantes.enums import OperadorCondicion, TipoDato
+
+        regla = self.repo_regla.obtener_por_id(id_regla)
+        if not regla:
+            raise ReglaNoEncontrada(id_regla)
+
+        base_conocimiento_id = regla.base_conocimiento_id
+
+        with transaction.atomic():
+            # 1. Actualizar campos de la Regla
+            if nombre is not None:
+                nombre = nombre.strip()
+                if self.repo_regla.existe_nombre_en_base(
+                    base_conocimiento_id, nombre, excluir_id=id_regla
+                ):
+                    raise ReglaDuplicadaError(nombre)
+                regla.nombre = nombre
+
+            if descripcion is not None:
+                regla.descripcion = descripcion
+
+            if prioridad is not None:
+                ValidadorBaseConocimiento.validar_prioridad(prioridad)
+                regla.prioridad = prioridad
+
+            if factor_certeza is not None:
+                ValidadorBaseConocimiento.validar_factor_certeza(factor_certeza)
+                regla.factor_certeza = factor_certeza
+
+            if activa is not None:
+                regla.activa = activa
+
+            self.repo_regla.guardar(regla)
+
+            # 2. Sincronizar Condiciones (SI / IF) si fueron provistas
+            if condiciones is not None:
+                CondicionModel.objects.filter(regla_id=id_regla).delete()
+                for idx, c_data in enumerate(condiciones, start=1):
+                    operador = c_data.get("operador", "=")
+                    valor_esperado = str(c_data.get("valor_esperado", ""))
+                    v_id = c_data.get("variable_id")
+                    h_id = c_data.get("hecho_id")
+                    v_nombre = c_data.get("variable_nombre") or c_data.get("nombre")
+
+                    if not v_id and not h_id and v_nombre:
+                        v_mod = VariableModel.objects.filter(
+                            base_conocimiento_id=base_conocimiento_id,
+                            nombre__iexact=v_nombre.strip(),
+                        ).first()
+                        if not v_mod:
+                            h_mod = HechoModel.objects.filter(
+                                base_conocimiento_id=base_conocimiento_id,
+                                nombre__iexact=v_nombre.strip(),
+                            ).first()
+                            if h_mod:
+                                h_id = h_mod.id
+                            else:
+                                raw_tipo = str(c_data.get("tipo_dato") or "").upper().strip()
+                                if raw_tipo == "NUMERO":
+                                    tipo_dato_str = TipoDato.ENTERO.value
+                                elif raw_tipo in [td.value for td in TipoDato]:
+                                    tipo_dato_str = raw_tipo
+                                else:
+                                    tipo_dato_str = TipoDato.ENTERO.value
+                                v_mod = VariableModel.objects.create(
+                                    base_conocimiento_id=base_conocimiento_id,
+                                    nombre=v_nombre.strip(),
+                                    tipo_dato=tipo_dato_str,
+                                )
+                                v_id = v_mod.id
+                        else:
+                            raw_tipo = str(c_data.get("tipo_dato") or "").upper().strip()
+                            if raw_tipo in [td.value for td in TipoDato] and v_mod.tipo_dato != raw_tipo:
+                                v_mod.tipo_dato = raw_tipo
+                                v_mod.save(update_fields=["tipo_dato"])
+                            v_id = v_mod.id
+
+                    cond_ent = Condicion(
+                        regla_id=id_regla,
+                        variable_id=UUID(str(v_id)) if v_id else None,
+                        hecho_id=UUID(str(h_id)) if h_id else None,
+                        operador=OperadorCondicion(operador),
+                        valor_esperado=valor_esperado,
+                        orden=c_data.get("orden", idx),
+                    )
+                    self.repo_cond.guardar(cond_ent)
+
+            # 3. Sincronizar Conclusiones (ENTONCES / THEN) si fueron provistas
+            if conclusiones is not None:
+                ConclusionModel.objects.filter(regla_id=id_regla).delete()
+                for idx, c_data in enumerate(conclusiones, start=1):
+                    valor_resultante = str(c_data.get("valor_resultante", ""))
+                    v_res_id = c_data.get("variable_resultante_id")
+                    h_res_id = c_data.get("hecho_resultante_id")
+                    v_nombre = c_data.get("variable_nombre") or c_data.get("destino")
+
+                    if not v_res_id and not h_res_id and v_nombre:
+                        v_mod = VariableModel.objects.filter(
+                            base_conocimiento_id=base_conocimiento_id,
+                            nombre__iexact=v_nombre.strip(),
+                        ).first()
+                        if not v_mod:
+                            h_mod = HechoModel.objects.filter(
+                                base_conocimiento_id=base_conocimiento_id,
+                                nombre__iexact=v_nombre.strip(),
+                            ).first()
+                            if h_mod:
+                                h_res_id = h_mod.id
+                            else:
+                                raw_tipo_res = str(c_data.get("tipo_dato") or "").upper().strip()
+                                if raw_tipo_res == "NUMERO":
+                                    tipo_dato_res = TipoDato.ENTERO.value
+                                elif raw_tipo_res in [td.value for td in TipoDato]:
+                                    tipo_dato_res = raw_tipo_res
+                                else:
+                                    tipo_dato_res = TipoDato.TEXTO.value
+                                v_mod = VariableModel.objects.create(
+                                    base_conocimiento_id=base_conocimiento_id,
+                                    nombre=v_nombre.strip(),
+                                    tipo_dato=tipo_dato_res,
+                                )
+                                v_res_id = v_mod.id
+                        else:
+                            raw_tipo_res = str(c_data.get("tipo_dato") or "").upper().strip()
+                            if raw_tipo_res in [td.value for td in TipoDato] and v_mod.tipo_dato != raw_tipo_res:
+                                v_mod.tipo_dato = raw_tipo_res
+                                v_mod.save(update_fields=["tipo_dato"])
+                            v_res_id = v_mod.id
+
+                    conc_ent = Conclusion(
+                        regla_id=id_regla,
+                        variable_resultante_id=UUID(str(v_res_id)) if v_res_id else None,
+                        hecho_resultante_id=UUID(str(h_res_id)) if h_res_id else None,
+                        valor_resultante=valor_resultante,
+                    )
+                    self.repo_conc.guardar(conc_ent)
+
+        return self.repo_regla.obtener_por_id(id_regla)
+
