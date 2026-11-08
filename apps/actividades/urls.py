@@ -6,7 +6,8 @@ from apps.actividades.cursos_api import (CursosListCreateAPIView, CursoDetailAPI
     CursoRegenerarInvitacionAPIView, CursoMiembrosAPIView, CursoMiembroDetailAPIView)
 from apps.actividades.api_v2 import (ActividadesAPIView, ActividadAPIView, AsignacionesAPIView, ContextoAsignacionAPIView,
     ActividadesEstudianteAPIView, EntregaEstudianteV2APIView, EnviarEntregaV2APIView, EntregasDocenteAPIView,
-    EntregaDetailV2APIView, ComentarioEntregaAPIView, ReabrirEntregaAPIView)
+    EntregaDetailV2APIView, ComentarioEntregaAPIView, ReabrirEntregaAPIView, CalificarEntregaAPIView,
+    AsociarSistemaEstudianteAPIView)
 from apps.actividades.trabajo_api import TrabajoActividadAPIView
 
 from apps.actividades.views import (
@@ -44,7 +45,9 @@ urlpatterns = [
     path("asignaciones/<uuid:id_asignacion>/entregas/", EntregasDocenteAPIView.as_view(), name="asignacion-entregas"),
     path("entregas/<uuid:id_entrega>/", EntregaDetailV2APIView.as_view(), name="entrega-detail"),
     path("entregas/<uuid:id_entrega>/comentarios/", ComentarioEntregaAPIView.as_view(), name="entrega-comentarios"),
+    path("entregas/<uuid:id_entrega>/calificar/", CalificarEntregaAPIView.as_view(), name="entrega-calificar"),
     path("entregas/<uuid:id_entrega>/reabrir/", ReabrirEntregaAPIView.as_view(), name="entrega-reabrir"),
+    path("asignaciones/<uuid:id_asignacion>/asociar-sistema/", AsociarSistemaEstudianteAPIView.as_view(), name="asignacion-asociar-sistema"),
     # HU-25: Resolución de Actividades
     path(
         "estudiante/actividades/",

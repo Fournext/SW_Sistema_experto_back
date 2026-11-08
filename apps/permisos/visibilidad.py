@@ -63,8 +63,14 @@ class SistemaPublicadoPermission(BasePermission):
                 sistema = SistemaExpertoModel.objects.get(pk=sistema_id)
                 if hasattr(sistema, "trabajo_actividad"):
                     raise NotFound()
-                if not docente and (sistema.estado == "BORRADOR" or sistema.actividades.exists()):
-                    raise NotFound()
+                if not docente and sistema.created_by_id != request.user.id:
+                    if sistema.estado == "BORRADOR" or sistema.actividades.exists():
+                        raise NotFound()
+                    if sistema.created_by_id and sistema.created_by.groups.filter(name="Estudiante").exists():
+                        raise NotFound()
+                    if request.method in ("PUT", "PATCH", "DELETE"):
+                        from rest_framework.exceptions import PermissionDenied
+                        raise PermissionDenied("No tienes permisos para modificar este sistema experto.")
                 if docente and sistema.created_by_id and sistema.created_by_id != request.user.id and not request.user.is_superuser:
                     raise NotFound()
                 if recurso in ("inferencias", "simulaciones", "ejecuciones") and EjecucionInferenciaModel.objects.filter(pk=identificador, asignacion_id__isnull=False).exists():

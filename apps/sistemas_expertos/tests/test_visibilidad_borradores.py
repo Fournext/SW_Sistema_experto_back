@@ -44,10 +44,16 @@ def test_lista_oculta_borradores_a_estudiante_pero_docente_y_superusuario_los_ve
 ):
     activo = str(sistemas_visibles["activo"]["sistema"].id)
     borrador = str(sistemas_visibles["borrador"]["sistema"].id)
-    for usuario, esperados in ((usuario_estudiante, {activo}), (usuario_docente, {activo, borrador}), (superusuario, {activo, borrador})):
+    for usuario, esperados in ((usuario_estudiante, set()), (usuario_docente, {activo, borrador}), (superusuario, {activo, borrador})):
         respuesta = cliente(usuario).get("/api/v1/sistemas-expertos/")
         assert respuesta.status_code == 200
         assert {s["id"] for s in respuesta.json()["data"]} == esperados
+
+    # El estudiante ve exclusivamente los sistemas personales que él mismo ha creado
+    sistema_estudiante = SistemaExpertoModel.objects.create(nombre="Mi Sandbox", estado="ACTIVO", created_by=usuario_estudiante)
+    respuesta = cliente(usuario_estudiante).get("/api/v1/sistemas-expertos/")
+    assert respuesta.status_code == 200
+    assert {s["id"] for s in respuesta.json()["data"]} == {str(sistema_estudiante.id)}
 
 
 @pytest.mark.django_db
@@ -66,11 +72,12 @@ def test_solo_docente_puede_activar_y_activacion_hace_visible_el_sistema(
     assert respuesta.status_code == 200
     assert respuesta.json()["data"]["estado"] == "ACTIVO"
     assert estudiante.get(url).status_code == 200
-    assert str(sistema.id) in {s["id"] for s in estudiante.get("/api/v1/sistemas-expertos/").json()["data"]}
+    # No aparece en el catálogo personal del estudiante porque pertenece al docente
+    assert str(sistema.id) not in {s["id"] for s in estudiante.get("/api/v1/sistemas-expertos/").json()["data"]}
     assert estudiante.patch(url, {"estado": "BORRADOR"}, format="json").status_code == 403
     sistema.refresh_from_db()
     assert sistema.estado == "ACTIVO"
-    assert estudiante.post("/api/v1/sistemas-expertos/", {"nombre": "No autorizado"}, format="json").status_code == 403
+    assert estudiante.post("/api/v1/sistemas-expertos/", {"nombre": "Mi Sandbox Personal"}, format="json").status_code == 201
     assert estudiante.delete(url).status_code == 403
 
 

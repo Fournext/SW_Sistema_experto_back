@@ -143,6 +143,8 @@ class EstadoAsignacion(StrEnum):
 class EstadoEntrega(StrEnum):
     BORRADOR = "BORRADOR"
     ENVIADA = "ENVIADA"
+    CALIFICADA = "CALIFICADA"
+    OBSERVADA = "OBSERVADA"
 
     @classmethod
     def choices(cls):

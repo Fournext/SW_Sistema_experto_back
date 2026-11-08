@@ -36,9 +36,11 @@ class LoginSerializer(serializers.Serializer):
 class RegistroEstudianteSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField()
-    nombre_completo = serializers.CharField(max_length=200)
+    nombre_completo = serializers.CharField(max_length=200, required=False)
+    nombre = serializers.CharField(max_length=200, required=False, write_only=True)
     password = serializers.CharField(write_only=True, min_length=6)
-    confirmar_password = serializers.CharField(write_only=True, min_length=6)
+    confirmar_password = serializers.CharField(write_only=True, min_length=6, required=False)
+    password_confirm = serializers.CharField(write_only=True, min_length=6, required=False)
 
     def validate_username(self, value):
         if Usuario.objects.filter(username__iexact=value).exists():
@@ -51,8 +53,23 @@ class RegistroEstudianteSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        if attrs["password"] != attrs["confirmar_password"]:
+        nombre = attrs.get("nombre_completo") or attrs.get("nombre")
+        if not nombre:
+            raise serializers.ValidationError({"nombre_completo": "Este campo es requerido."})
+        attrs["nombre_completo"] = nombre
+        attrs.pop("nombre", None)
+
+        confirmar = (
+            attrs.get("confirmar_password")
+            or attrs.get("password_confirm")
+        )
+        if not confirmar:
+            confirmar = attrs.get("password")
+
+        if attrs.get("password") != confirmar:
             raise serializers.ValidationError({"confirmar_password": "Las contraseñas no coinciden."})
+        attrs["confirmar_password"] = confirmar
+        attrs.pop("password_confirm", None)
         return attrs
 
     def create(self, validated_data):

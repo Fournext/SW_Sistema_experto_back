@@ -58,8 +58,8 @@ def asignacion_visible(usuario, id_asignacion, escritura=False):
             raise PermissionDenied("El curso o la asignación están cerrados.")
         if asignacion.fecha_limite and asignacion.fecha_limite < timezone.now():
             raise PermissionDenied("El plazo de entrega ha vencido.")
-        if EntregaActividadModel.objects.filter(asignacion=asignacion, estudiante=usuario, estado="ENVIADA").exists():
-            raise PermissionDenied("La entrega está cerrada; el docente debe reabrirla.")
+        if EntregaActividadModel.objects.filter(asignacion=asignacion, estudiante=usuario, estado__in=("ENVIADA", "CALIFICADA")).exists():
+            raise PermissionDenied("La entrega está cerrada o calificada; el docente debe reabrirla.")
     return asignacion
 
 
@@ -86,6 +86,7 @@ def json_seguro(datos):
 
 def snapshot_bc(sistema):
     from apps.base_conocimiento.models import HechoModel, VariableModel, ReglaModel
+    from apps.editor_visual.models import NodoVisualModel, ConexionVisualModel
     base = BaseConocimientoModel.objects.get(sistema_experto=sistema)
     reglas = []
     for regla in ReglaModel.objects.filter(base_conocimiento=base).prefetch_related("condiciones", "conclusiones").order_by("-prioridad", "nombre", "id"):
@@ -94,9 +95,136 @@ def snapshot_bc(sistema):
         datos["condiciones"] = list(regla.condiciones.order_by("orden", "id").values())
         datos["conclusiones"] = list(regla.conclusiones.order_by("id").values())
         reglas.append(datos)
+    nodos = list(NodoVisualModel.objects.filter(sistema_experto=sistema).values())
+    conexiones = list(ConexionVisualModel.objects.filter(sistema_experto=sistema).values())
     return json_seguro({"id": base.id, "sistema_experto_id": sistema.id, "nombre": base.nombre, "version": base.version,
                         "hechos": list(HechoModel.objects.filter(base_conocimiento=base).values()),
-                        "variables": list(VariableModel.objects.filter(base_conocimiento=base).values()), "reglas": reglas})
+                        "variables": list(VariableModel.objects.filter(base_conocimiento=base).values()),
+                        "reglas": reglas, "nodos": nodos, "conexiones": conexiones})
+
+
+@transaction.atomic
+def clonar_conocimiento_sistema(sistema_origen, sistema_destino):
+    if sistema_origen.pk == sistema_destino.pk:
+        raise ValidationError("No se puede clonar un sistema experto sobre sí mismo.")
+
+    from apps.base_conocimiento.models import (
+        BaseConocimientoModel, HechoModel, VariableModel, ReglaModel, CondicionModel, ConclusionModel,
+    )
+    from apps.editor_visual.models import NodoVisualModel, ConexionVisualModel
+    import uuid
+
+    base_origen = BaseConocimientoModel.objects.get(sistema_experto=sistema_origen)
+    base_destino = BaseConocimientoModel.objects.get(sistema_experto=sistema_destino)
+
+    ReglaModel.objects.filter(base_conocimiento=base_destino).delete()
+    VariableModel.objects.filter(base_conocimiento=base_destino).delete()
+    HechoModel.objects.filter(base_conocimiento=base_destino).delete()
+    NodoVisualModel.objects.filter(sistema_experto=sistema_destino).delete()
+    ConexionVisualModel.objects.filter(sistema_experto=sistema_destino).delete()
+
+    hecho_map = {}
+    for h in HechoModel.objects.filter(base_conocimiento=base_origen):
+        nuevo_id = uuid.uuid4()
+        hecho_map[h.id] = nuevo_id
+        HechoModel.objects.create(
+            id=nuevo_id,
+            base_conocimiento=base_destino,
+            nombre=h.nombre,
+            valor=h.valor,
+            tipo_dato=h.tipo_dato,
+            opciones=copy.deepcopy(h.opciones) if h.opciones else [],
+            pregunta=h.pregunta,
+            es_inicial=h.es_inicial,
+        )
+
+    variable_map = {}
+    for v in VariableModel.objects.filter(base_conocimiento=base_origen):
+        nuevo_id = uuid.uuid4()
+        variable_map[v.id] = nuevo_id
+        VariableModel.objects.create(
+            id=nuevo_id,
+            base_conocimiento=base_destino,
+            nombre=v.nombre,
+            tipo_dato=v.tipo_dato,
+            valor_defecto=v.valor_defecto,
+            pregunta=v.pregunta,
+            es_inicial=v.es_inicial,
+            descripcion=v.descripcion,
+        )
+
+    regla_map = {}
+    condicion_map = {}
+    conclusion_map = {}
+    for r in ReglaModel.objects.filter(base_conocimiento=base_origen):
+        nueva_regla_id = uuid.uuid4()
+        regla_map[r.id] = nueva_regla_id
+        nueva_regla = ReglaModel.objects.create(
+            id=nueva_regla_id,
+            base_conocimiento=base_destino,
+            nombre=r.nombre,
+            descripcion=r.descripcion,
+            prioridad=r.prioridad,
+            factor_certeza=r.factor_certeza,
+            activa=r.activa,
+        )
+        for c in r.condiciones.all():
+            nueva_condicion_id = uuid.uuid4()
+            condicion_map[c.id] = nueva_condicion_id
+            CondicionModel.objects.create(
+                id=nueva_condicion_id,
+                regla=nueva_regla,
+                variable_id=variable_map.get(c.variable_id),
+                hecho_id=hecho_map.get(c.hecho_id),
+                operador=c.operador,
+                valor_esperado=c.valor_esperado,
+                orden=c.orden,
+            )
+        for conc in r.conclusiones.all():
+            nueva_conclusion_id = uuid.uuid4()
+            conclusion_map[conc.id] = nueva_conclusion_id
+            ConclusionModel.objects.create(
+                id=nueva_conclusion_id,
+                regla=nueva_regla,
+                variable_resultante_id=variable_map.get(conc.variable_resultante_id),
+                hecho_resultante_id=hecho_map.get(conc.hecho_resultante_id),
+                valor_resultante=conc.valor_resultante,
+            )
+
+    nodo_map = {}
+    for n in NodoVisualModel.objects.filter(sistema_experto=sistema_origen):
+        nuevo_id = uuid.uuid4()
+        nodo_map[n.id] = nuevo_id
+        entidad_nueva = None
+        if n.tipo == "HECHO":
+            entidad_nueva = hecho_map.get(n.referencia_id)
+        elif n.tipo == "VARIABLE":
+            entidad_nueva = variable_map.get(n.referencia_id)
+        elif n.tipo == "REGLA":
+            entidad_nueva = regla_map.get(n.referencia_id)
+        elif n.tipo == "CONDICION":
+            entidad_nueva = condicion_map.get(n.referencia_id)
+        elif n.tipo == "CONCLUSION":
+            entidad_nueva = conclusion_map.get(n.referencia_id)
+        NodoVisualModel.objects.create(
+            id=nuevo_id,
+            sistema_experto=sistema_destino,
+            tipo=n.tipo,
+            referencia_id=entidad_nueva or n.referencia_id,
+            posicion_x=n.posicion_x,
+            posicion_y=n.posicion_y,
+        )
+
+    for con in ConexionVisualModel.objects.filter(sistema_experto=sistema_origen):
+        if con.nodo_origen_id in nodo_map and con.nodo_destino_id in nodo_map:
+            ConexionVisualModel.objects.create(
+                id=uuid.uuid4(),
+                sistema_experto=sistema_destino,
+                nodo_origen_id=nodo_map[con.nodo_origen_id],
+                nodo_destino_id=nodo_map[con.nodo_destino_id],
+                etiqueta=con.etiqueta,
+                tipo=con.tipo,
+            )
 
 
 def redactar_resultado(datos, permisos):

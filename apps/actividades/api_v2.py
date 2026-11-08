@@ -228,6 +228,10 @@ def datos_entrega(entrega, incluir_contenido=True, usuario=None):
     datos = {"id": str(entrega.id), "entrega_id": str(entrega.id), "asignacion_id": str(entrega.asignacion_id),
         "estudiante_id": entrega.estudiante_id, "estudiante_username": entrega.estudiante.username,
         "estado": entrega.estado, "fecha_envio": entrega.fecha_envio, "numero_revision": entrega.numero_revision,
+        "calificacion": float(entrega.calificacion) if entrega.calificacion is not None else None,
+        "calificada_en": entrega.calificada_en,
+        "calificada_por_id": entrega.calificada_por_id,
+        "calificada_por_nombre": (entrega.calificada_por.nombre_completo or entrega.calificada_por.username) if entrega.calificada_por else None,
         "creada_en": entrega.creada_en, "actualizada_en": entrega.actualizada_en}
     if incluir_contenido:
         if not (usuario is not None and es_docente(usuario) and entrega.estado != "ENVIADA"):
@@ -289,6 +293,8 @@ class EntregaEstudianteV2APIView(APIView):
         ser = EntregaEntrada(data=request.data)
         ser.is_valid(raise_exception=True)
         entrega, _ = EntregaActividadModel.objects.select_for_update().get_or_create(asignacion=a, estudiante=request.user)
+        if entrega.estado in ("ENVIADA", "CALIFICADA"):
+            raise PermissionDenied("La entrega ya fue enviada o calificada y no admite modificaciones hasta que el docente la reabra.")
         d = ser.validated_data
         ejecuciones = _ejecuciones_adjuntas(request.user, a, d, entrega)
         entrega.ejecuciones_ids = [str(e.id) for e in ejecuciones]
@@ -332,15 +338,17 @@ class EntregasDocenteAPIView(APIView):
             filas.append({"estudiante_id": m.estudiante_id, "estudiante_username": m.estudiante.username,
                 "estudiante_nombre": m.estudiante.nombre_completo, "matricula_activa": m.activo,
                 "estado": e.estado if e else "PENDIENTE", "entrega_id": str(e.id) if e else None,
-                "fecha_envio": e.fecha_envio if e else None, "numero_revision": e.numero_revision if e else 0})
+                "fecha_envio": e.fecha_envio if e else None, "numero_revision": e.numero_revision if e else 0,
+                "calificacion": float(e.calificacion) if e and e.calificacion is not None else None,
+                "calificada_en": e.calificada_en if e else None})
         return respuesta_exitosa(datos=filas)
 
 
 def _entrega_visible(usuario, id_entrega):
-    e = get_object_or_404(EntregaActividadModel.objects.select_related("estudiante", "asignacion__curso", "asignacion__actividad"), pk=id_entrega)
+    e = get_object_or_404(EntregaActividadModel.objects.select_related("estudiante", "asignacion__curso", "asignacion__actividad", "calificada_por"), pk=id_entrega)
     asignacion_visible(usuario, e.asignacion_id)
     if es_docente(usuario):
-        if e.estado != "ENVIADA" and not e.revisiones.exists():
+        if e.estado not in ("ENVIADA", "CALIFICADA") and not e.revisiones.exists():
             raise NotFound()
     elif e.estudiante_id != usuario.id:
         raise NotFound()
@@ -361,8 +369,8 @@ class ComentarioEntregaAPIView(APIView):
         if not es_docente(request.user):
             raise PermissionDenied("Solo el docente puede comentar una entrega enviada.")
         e = _entrega_visible(request.user, id_entrega)
-        if e.estado != "ENVIADA":
-            raise PermissionDenied("Solo se comenta una entrega enviada.")
+        if e.estado not in ("ENVIADA", "CALIFICADA"):
+            raise PermissionDenied("Solo se comenta una entrega enviada o calificada.")
         texto = request.data.get("texto", "")
         if not isinstance(texto, str) or not texto.strip():
             raise ValidationError({"texto": "Escriba un comentario."})
@@ -372,6 +380,95 @@ class ComentarioEntregaAPIView(APIView):
         c = ComentarioEntregaModel.objects.create(revision=revision, autor=request.user, texto=texto.strip())
         return respuesta_creada(datos={"id": str(c.id), "revision_id": str(revision.id), "autor_id": c.autor_id,
             "autor_nombre": request.user.nombre_completo or request.user.username, "texto": c.texto, "creado_en": c.creado_en})
+
+
+class CalificarEntregaEntrada(serializers.Serializer):
+    calificacion = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=100)
+    comentario = serializers.CharField(required=False, allow_blank=True)
+
+
+class CalificarEntregaAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, id_entrega):
+        if not es_docente(request.user):
+            raise PermissionDenied("Solo el docente puede calificar una entrega.")
+        e = _entrega_visible(request.user, id_entrega)
+        if e.estado not in ("ENVIADA", "CALIFICADA"):
+            raise ValidationError("Solo se puede calificar una entrega enviada.")
+
+        ser = CalificarEntregaEntrada(data=request.data)
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+
+        e.calificacion = d["calificacion"]
+        e.calificada_en = timezone.now()
+        e.calificada_por = request.user
+        e.estado = "CALIFICADA"
+        e.save(update_fields=["calificacion", "calificada_en", "calificada_por", "estado", "actualizada_en"])
+
+        comentario_texto = d.get("comentario", "").strip()
+        if comentario_texto:
+            revision = e.revisiones.last()
+            if revision:
+                ComentarioEntregaModel.objects.create(
+                    revision=revision,
+                    autor=request.user,
+                    texto=comentario_texto
+                )
+
+        return respuesta_exitosa(datos=datos_entrega(e, usuario=request.user), mensaje="Entrega calificada exitosamente.")
+
+
+class AsociarSistemaEntrada(serializers.Serializer):
+    sistema_id = serializers.UUIDField()
+
+
+class AsociarSistemaEstudianteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, id_asignacion):
+        a = asignacion_visible(request.user, id_asignacion, escritura=True)
+        if es_docente(request.user):
+            raise PermissionDenied("Solo el estudiante puede asociar su sistema personal a la tarea.")
+
+        if a.actividad.tipo != "CREACION_BC":
+            raise ValidationError("Solo se puede importar un sistema experto personal en actividades de tipo Creación de Base de Conocimiento.")
+
+        permisos = permisos_actividad(a.actividad)
+        if not permisos.get("editar_bc", True):
+            raise PermissionDenied("Esta actividad didáctica no permite editar ni reemplazar la base de conocimiento.")
+
+        ser = AsociarSistemaEntrada(data=request.data)
+        ser.is_valid(raise_exception=True)
+        sistema_id = ser.validated_data["sistema_id"]
+
+        from apps.sistemas_expertos.models import SistemaExpertoModel
+        try:
+            sistema_origen = SistemaExpertoModel.objects.get(pk=sistema_id)
+        except SistemaExpertoModel.DoesNotExist:
+            raise NotFound("El sistema experto especificado no existe.")
+
+        if sistema_origen.created_by_id != request.user.id:
+            raise PermissionDenied("Solo puedes importar sistemas de tu propio laboratorio personal.")
+
+        from apps.actividades.models import TrabajoActividadModel
+        if TrabajoActividadModel.objects.filter(sistema_experto=sistema_origen).exists():
+            raise ValidationError("No se puede importar un sistema asignado a otra actividad; debe ser un proyecto de tu laboratorio personal.")
+
+        sistema_destino = sistema_trabajo(a, request.user)
+        if sistema_origen.pk == sistema_destino.pk:
+            raise ValidationError("No se puede importar el mismo sistema de trabajo sobre sí mismo.")
+
+        from apps.actividades.politicas import clonar_conocimiento_sistema
+        clonar_conocimiento_sistema(sistema_origen, sistema_destino)
+
+        return respuesta_exitosa(
+            datos={"sistema_trabajo_id": str(sistema_destino.id), "sistema_origen_id": str(sistema_origen.id)},
+            mensaje="Sistema experto importado exitosamente a tu espacio de trabajo de la actividad."
+        )
 
 
 class ReabrirEntregaAPIView(APIView):
@@ -392,5 +489,8 @@ class ReabrirEntregaAPIView(APIView):
             raise ValidationError("Reactive el curso y la asignación antes de reabrir.")
         a.save(update_fields=["fecha_limite"])
         e.estado = "BORRADOR"
-        e.save(update_fields=["estado", "actualizada_en"])
+        e.calificacion = None
+        e.calificada_en = None
+        e.calificada_por = None
+        e.save(update_fields=["estado", "calificacion", "calificada_en", "calificada_por", "actualizada_en"])
         return respuesta_exitosa(datos=datos_entrega(e, incluir_contenido=False))

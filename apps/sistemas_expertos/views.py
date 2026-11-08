@@ -50,7 +50,8 @@ class SistemaExpertoListCreateAPIView(APIView):
         ids = set(visibles.values_list("id", flat=True))
         sistemas = [s for s in sistemas if s.id in ids]
         if not puede_ver_borradores(request):
-            ids = set(visibles.exclude(estado="BORRADOR").filter(actividades__isnull=True).values_list("id", flat=True))
+            visibles_estudiante = visibles.filter(created_by=request.user)
+            ids = set(visibles_estudiante.values_list("id", flat=True))
             sistemas = [s for s in sistemas if s.id in ids]
         datos = SistemaExpertoSalidaSerializer(sistemas, many=True).data
         return respuesta_exitosa(datos=datos, mensaje="Sistemas expertos listados correctamente.")

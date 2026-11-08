@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.permisos.codigos import CATALOGO, GRUPOS_CONFIG, Permisos, prefijo, slug_sistema
+from apps.permisos.codigos import CATALOGO, GRUPOS_CONFIG, PERMISOS_ESTUDIANTE, Permisos, prefijo, slug_sistema
 from apps.permisos.guards import permisos_por_metodo, requiere_permiso
 from apps.permisos.services import PermisoService
 
@@ -36,11 +36,13 @@ def test_grupos_configuracion_coherente():
         for p in lista_permisos:
             assert p in todos, f"Permiso {p} en grupo {nombre_grupo} no existe en CATALOGO"
 
-    # Verificar que el grupo Estudiante tenga exactamente los 6 permisos definidos
-    assert len(GRUPOS_CONFIG["Estudiante"]) == 6
+    # Verificar que el grupo Estudiante tenga los permisos definidos
+    assert len(GRUPOS_CONFIG["Estudiante"]) == len(PERMISOS_ESTUDIANTE)
+    assert Permisos.SISTEMAS_CREAR in GRUPOS_CONFIG["Estudiante"]
     assert Permisos.ACTIVIDADES_RESOLVER in GRUPOS_CONFIG["Estudiante"]
     assert Permisos.ENTREGAS_ENVIAR in GRUPOS_CONFIG["Estudiante"]
     assert Permisos.CENTRAL_ACCEDER not in GRUPOS_CONFIG["Estudiante"]
+    assert Permisos.ACTIVIDADES_CREAR not in GRUPOS_CONFIG["Estudiante"]
     assert Permisos.CENTRAL_ACCEDER not in GRUPOS_CONFIG["Docente"]
     assert Permisos.CENTRAL_ACCEDER in GRUPOS_CONFIG["Administrador central"]
 
@@ -51,7 +53,7 @@ def test_guards_permiso_requerido(usuario_docente, usuario_estudiante, superusua
     from rest_framework.test import APIRequestFactory, force_authenticate
 
     class DummyView(APIView):
-        permission_classes = [requiere_permiso(Permisos.SISTEMAS_CREAR)]
+        permission_classes = [requiere_permiso(Permisos.ACTIVIDADES_CREAR)]
         def post(self, request):
             return Response({"ok": True})
 
@@ -63,13 +65,13 @@ def test_guards_permiso_requerido(usuario_docente, usuario_estudiante, superusua
     resp_anon = view(req_anon)
     assert resp_anon.status_code == status.HTTP_401_UNAUTHORIZED
 
-    # 2. Estudiante (no tiene sistemas_crear) -> 403
+    # 2. Estudiante (no tiene actividades_crear) -> 403
     req_est = factory.post("/test/")
     force_authenticate(req_est, user=usuario_estudiante)
     resp_est = view(req_est)
     assert resp_est.status_code == status.HTTP_403_FORBIDDEN
 
-    # 3. Docente (tiene sistemas_crear) -> 200
+    # 3. Docente (tiene actividades_crear) -> 200
     req_doc = factory.post("/test/")
     force_authenticate(req_doc, user=usuario_docente)
     resp_doc = view(req_doc)
@@ -91,7 +93,7 @@ def test_guards_permisos_por_metodo(usuario_docente, usuario_estudiante):
         permission_classes = [
             permisos_por_metodo({
                 "GET": Permisos.SISTEMAS_VER,
-                "POST": Permisos.SISTEMAS_CREAR,
+                "POST": Permisos.ACTIVIDADES_CREAR,
             })
         ]
         def get(self, request): return Response({"accion": "get"})
@@ -106,7 +108,7 @@ def test_guards_permisos_por_metodo(usuario_docente, usuario_estudiante):
     force_authenticate(req_get, user=usuario_estudiante)
     assert view(req_get).status_code == status.HTTP_200_OK
 
-    # POST para estudiante (no tiene sistemas_crear) -> 403
+    # POST para estudiante (no tiene actividades_crear) -> 403
     req_post = factory.post("/test/")
     force_authenticate(req_post, user=usuario_estudiante)
     assert view(req_post).status_code == status.HTTP_403_FORBIDDEN

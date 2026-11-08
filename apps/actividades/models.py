@@ -179,6 +179,24 @@ class EntregaActividadModel(models.Model):
     fecha_envio = models.DateTimeField(
         null=True, blank=True, verbose_name="Fecha de envío definitivo"
     )
+    calificacion = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Calificación / Nota obtenida",
+    )
+    calificada_en = models.DateTimeField(
+        null=True, blank=True, verbose_name="Fecha de calificación"
+    )
+    calificada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="entregas_calificadas",
+        verbose_name="Docente que calificó",
+    )
     creada_en = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     actualizada_en = models.DateTimeField(auto_now=True, verbose_name="Fecha de actualización")
 
@@ -191,7 +209,12 @@ class EntregaActividadModel(models.Model):
             models.UniqueConstraint(
                 fields=["asignacion", "estudiante"],
                 name="unique_entrega_estudiante_por_asignacion",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(calificacion__isnull=True)
+                | (models.Q(calificacion__gte=0) & models.Q(calificacion__lte=100)),
+                name="chk_entrega_calificacion_rango",
+            ),
         ]
 
     def __str__(self):
