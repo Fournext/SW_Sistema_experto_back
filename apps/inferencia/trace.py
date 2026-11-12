@@ -39,6 +39,9 @@ class PasoEjecucionResultado:
     motivos_descarte_conflicto: Dict[UUID, str] = field(default_factory=dict)
     conclusion_final: Optional[str] = None
     descripcion: str = ""
+    motivo_parada: str = ""
+    metas_unificadas: Dict[str, Any] = field(default_factory=dict)
+    metas_pendientes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -53,3 +56,7 @@ class ResultadoInferencia:
     conclusion_final: Optional[str] = None
     total_iteraciones: int = 0
     pasos: List[PasoEjecucionResultado] = field(default_factory=list)
+    metas_solicitadas: List[str] = field(default_factory=list)
+    metas_unificadas: Dict[str, Any] = field(default_factory=dict)
+    metas_pendientes: List[str] = field(default_factory=list)
+    motivo_parada: str = ""

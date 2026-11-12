@@ -355,6 +355,7 @@ class CrearRegla:
         prioridad: int = 0,
         factor_certeza: Optional[Decimal] = None,
         activa: bool = True,
+        expresion_logica: Optional[str] = None,
     ) -> Regla:
         nombre = nombre.strip()
         ValidadorBaseConocimiento.validar_prioridad(prioridad)
@@ -373,6 +374,7 @@ class CrearRegla:
             prioridad=prioridad,
             factor_certeza=factor_certeza,
             activa=activa,
+            expresion_logica=expresion_logica,
         )
         return self.repo_regla.guardar(regla)
 
@@ -389,6 +391,7 @@ class ActualizarRegla:
         prioridad: Optional[int] = None,
         factor_certeza: Optional[Decimal] = None,
         activa: Optional[bool] = None,
+        expresion_logica: Optional[str] = None,
     ) -> Regla:
         regla = self.repo_regla.obtener_por_id(id_regla)
         if not regla:
@@ -415,6 +418,9 @@ class ActualizarRegla:
 
         if activa is not None:
             regla.activa = activa
+
+        if expresion_logica is not None:
+            regla.expresion_logica = expresion_logica
 
         return self.repo_regla.guardar(regla)
 
@@ -638,6 +644,7 @@ class CrearReglaCompleta:
         descripcion: Optional[str] = None,
         factor_certeza: Optional[Decimal] = None,
         activa: bool = True,
+        expresion_logica: Optional[str] = None,
         condiciones: Optional[List[dict]] = None,
         conclusiones: Optional[List[dict]] = None,
         posicion_x: Optional[float] = None,
@@ -676,6 +683,7 @@ class CrearReglaCompleta:
                 prioridad=prioridad,
                 factor_certeza=factor_certeza,
                 activa=activa,
+                expresion_logica=expresion_logica,
             )
             regla_guardada = self.repo_regla.guardar(regla_ent)
 
@@ -839,6 +847,7 @@ class ActualizarReglaCompleta:
         descripcion: Optional[str] = None,
         factor_certeza: Optional[Decimal] = None,
         activa: Optional[bool] = None,
+        expresion_logica: Optional[str] = None,
         condiciones: Optional[List[dict]] = None,
         conclusiones: Optional[List[dict]] = None,
     ) -> Regla:
@@ -880,6 +889,9 @@ class ActualizarReglaCompleta:
 
             if activa is not None:
                 regla.activa = activa
+
+            if expresion_logica is not None:
+                regla.expresion_logica = expresion_logica
 
             self.repo_regla.guardar(regla)
 

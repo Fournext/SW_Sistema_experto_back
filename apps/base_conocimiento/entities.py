@@ -73,6 +73,7 @@ class Regla:
     prioridad: int = 0
     factor_certeza: Optional[Decimal] = None
     activa: bool = True
+    expresion_logica: Optional[str] = None
     condiciones: List[Condicion] = field(default_factory=list)
     conclusiones: List[Conclusion] = field(default_factory=list)
 

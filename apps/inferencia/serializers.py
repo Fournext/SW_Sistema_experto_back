@@ -32,6 +32,10 @@ class EjecutarInferenciaSalidaSerializer(serializers.Serializer):
     reglas_evaluadas = ReglaEvaluadaTrazaSerializer(many=True)
     hechos_generados = HechoReporteSerializer(many=True)
     conclusion_final = serializers.CharField(allow_null=True)
+    metas_solicitadas = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    metas_unificadas = serializers.DictField(required=False, default=dict)
+    metas_pendientes = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    motivo_parada = serializers.CharField(required=False, allow_blank=True, default="")
 
     def get_estado(self, obj) -> str:
         val = getattr(obj, "estado", "")
@@ -44,6 +48,12 @@ class IniciarSimulacionEntradaSerializer(serializers.Serializer):
         required=False,
         default=list,
         help_text="Lista opcional de hechos personalizados para la simulación [{'nombre': '...', 'valor': '...'}]",
+    )
+    metas = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list,
+        help_text="Vector opcional de metas para parada temprana en FWC (ej. ['C'] o ['P', 'C'])",
     )
 
 

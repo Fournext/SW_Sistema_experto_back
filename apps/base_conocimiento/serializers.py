@@ -219,6 +219,7 @@ class ReglaEntradaSerializer(serializers.Serializer):
         max_value=Decimal("1.0"),
     )
     activa = serializers.BooleanField(default=True)
+    expresion_logica = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class ReglaParcialEntradaSerializer(serializers.Serializer):
@@ -234,6 +235,7 @@ class ReglaParcialEntradaSerializer(serializers.Serializer):
         max_value=Decimal("1.0"),
     )
     activa = serializers.BooleanField(required=False)
+    expresion_logica = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class ReglaSalidaSerializer(serializers.Serializer):
@@ -244,6 +246,7 @@ class ReglaSalidaSerializer(serializers.Serializer):
     prioridad = serializers.IntegerField()
     factor_certeza = serializers.DecimalField(max_digits=4, decimal_places=2, allow_null=True)
     activa = serializers.BooleanField()
+    expresion_logica = serializers.CharField(allow_null=True, required=False)
     condiciones = CondicionSalidaSerializer(many=True, required=False)
     conclusiones = ConclusionSalidaSerializer(many=True, required=False)
 
@@ -296,6 +299,7 @@ class ReglaCompletaEntradaSerializer(serializers.Serializer):
         max_value=Decimal("1.0"),
     )
     activa = serializers.BooleanField(default=True)
+    expresion_logica = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     condiciones = CondicionItemInputSerializer(many=True, required=False, default=list)
     conclusiones = ConclusionItemInputSerializer(many=True, required=False, default=list)
     posicion_x = serializers.FloatField(required=False, allow_null=True)

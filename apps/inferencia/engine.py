@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set
 from uuid import UUID
 
 from apps.base_conocimiento.entities import Hecho, Regla, Variable
+from apps.inferencia.ast_evaluator import evaluar_expresion_logica
 from apps.inferencia.conflict_resolution import (
     EstrategiaResolucionConflictos,
     ResolucionPorPrioridad,
@@ -83,6 +84,49 @@ class MotorInferencia:
                             mapa[str(conc.variable_resultante_id)] = v.nombre
         return mapa
 
+    @staticmethod
+    def todas_unificadas(memoria_trabajo: Dict[str, Any], metas: Optional[List[str]]) -> bool:
+        """
+        Determina si todas las variables/hechos del vector de metas
+        tienen un valor asignado no nulo en la memoria de trabajo viva.
+        """
+        if not metas:
+            return False
+        claves_memoria = {str(k).strip().lower(): k for k in memoria_trabajo.keys()}
+        for m in metas:
+            meta_limpia = str(m).strip().lower()
+            if not meta_limpia:
+                continue
+            if meta_limpia not in claves_memoria:
+                return False
+            val = memoria_trabajo[claves_memoria[meta_limpia]]
+            if val is None or (isinstance(val, str) and not val.strip()):
+                return False
+        return True
+
+    @staticmethod
+    def clasificar_metas(memoria_trabajo: Dict[str, Any], metas: Optional[List[str]]) -> Dict[str, Any]:
+        """
+        Clasifica las metas solicitadas en unificadas (con su valor) y pendientes.
+        """
+        if not metas:
+            return {"unificadas": {}, "pendientes": []}
+        claves_memoria = {str(k).strip().lower(): k for k in memoria_trabajo.keys()}
+        unificadas: Dict[str, Any] = {}
+        pendientes: List[str] = []
+        for m in metas:
+            meta_limpia = str(m).strip()
+            if not meta_limpia:
+                continue
+            clave = meta_limpia.lower()
+            if clave in claves_memoria:
+                val = memoria_trabajo[claves_memoria[clave]]
+                if val is not None and not (isinstance(val, str) and not val.strip()):
+                    unificadas[meta_limpia] = val
+                    continue
+            pendientes.append(meta_limpia)
+        return {"unificadas": unificadas, "pendientes": pendientes}
+
     def ejecutar_un_paso(
         self,
         memoria_trabajo: Dict[str, Any],
@@ -91,6 +135,7 @@ class MotorInferencia:
         variables: Optional[List[Variable]] = None,
         mapa_ids_a_nombres: Optional[Dict[str, str]] = None,
         numero_paso: int = 1,
+        metas: Optional[List[str]] = None,
     ) -> PasoEjecucionResultado:
         """
         Ejecuta exactamente un ciclo de inferencia:
@@ -112,20 +157,29 @@ class MotorInferencia:
         condiciones_por_regla: Dict[UUID, List[Dict[str, Any]]] = {}
 
         for regla in reglas_activas:
-            if not regla.condiciones:
+            if not regla.condiciones and not regla.expresion_logica:
                 continue
 
             todas_cumplen = True
             condiciones_evaluadas = []
-            for condicion in regla.condiciones:
-                cumple = EvaluadorCondicion.evaluar(
-                    condicion=condicion,
-                    memoria_trabajo=memoria_trabajo,
-                    mapa_ids_a_nombres=mapa_ids_a_nombres,
-                )
-                if not cumple:
-                    todas_cumplen = False
-                condiciones_evaluadas.append({"condicion_id": str(condicion.id), "resultado": bool(cumple)})
+            if regla.expresion_logica:
+                cumple, det = evaluar_expresion_logica(regla.expresion_logica, memoria_trabajo)
+                todas_cumplen = bool(cumple)
+                condiciones_evaluadas.append({
+                    "expresion_logica": regla.expresion_logica,
+                    "resultado": todas_cumplen,
+                    "detalle": det,
+                })
+            else:
+                for condicion in regla.condiciones:
+                    cumple = EvaluadorCondicion.evaluar(
+                        condicion=condicion,
+                        memoria_trabajo=memoria_trabajo,
+                        mapa_ids_a_nombres=mapa_ids_a_nombres,
+                    )
+                    if not cumple:
+                        todas_cumplen = False
+                    condiciones_evaluadas.append({"condicion_id": str(condicion.id), "resultado": bool(cumple)})
             condiciones_por_regla[regla.id] = condiciones_evaluadas
 
             trazas.append(
@@ -170,6 +224,9 @@ class MotorInferencia:
                 orden_traza += 1
 
         if not conjunto_conflicto:
+            clasificacion = self.clasificar_metas(memoria_trabajo, metas)
+            metas_cumplidas = bool(metas and self.todas_unificadas(memoria_trabajo, metas))
+            motivo = "METAS_ALCANZADAS" if metas_cumplidas else ("SATURACION" if metas else "")
             return PasoEjecucionResultado(
                 numero_paso=numero_paso,
                 finalizado=True,
@@ -177,6 +234,9 @@ class MotorInferencia:
                 memoria_trabajo_post=dict(memoria_trabajo),
                 trazas_paso=trazas,
                 descripcion="Inferencia detenida: no existen más reglas cuyas condiciones se cumplan en la memoria de trabajo.",
+                motivo_parada=motivo,
+                metas_unificadas=clasificacion["unificadas"],
+                metas_pendientes=clasificacion["pendientes"],
             )
 
         # Resolver conflicto con detalle determinista
@@ -234,9 +294,16 @@ class MotorInferencia:
 
         conclusion_final = str(hechos_generados[-1]["valor"]) if hechos_generados else None
 
+        clasificacion = self.clasificar_metas(memoria_post, metas)
+        metas_cumplidas = bool(metas and self.todas_unificadas(memoria_post, metas))
+        motivo = "METAS_ALCANZADAS" if metas_cumplidas else ""
+        finalizado = metas_cumplidas
+        if metas_cumplidas:
+            descripcion += f" ¡Todas las metas ({', '.join(metas or [])}) han sido unificadas! Inferencia detenida tempranamente."
+
         return PasoEjecucionResultado(
             numero_paso=numero_paso,
-            finalizado=False,
+            finalizado=finalizado,
             memoria_trabajo_pre=memoria_pre,
             memoria_trabajo_post=memoria_post,
             regla_disparada=regla_ganadora,
@@ -248,6 +315,9 @@ class MotorInferencia:
             motivos_descarte_conflicto=resultado_conflicto.motivos_descarte,
             conclusion_final=conclusion_final,
             descripcion=descripcion,
+            motivo_parada=motivo,
+            metas_unificadas=clasificacion["unificadas"],
+            metas_pendientes=clasificacion["pendientes"],
         )
 
     def ejecutar_un_paso_regla(
@@ -273,16 +343,25 @@ class MotorInferencia:
         orden_traza = 1
 
         condiciones_evaluadas = []
-        todas_cumplen = bool(regla.condiciones)
-        for condicion in (regla.condiciones or []):
-            cumple = EvaluadorCondicion.evaluar(
-                condicion=condicion,
-                memoria_trabajo=memoria_trabajo,
-                mapa_ids_a_nombres=mapa_ids_a_nombres,
-            )
-            condiciones_evaluadas.append({"condicion_id": str(condicion.id), "resultado": bool(cumple)})
-            if not cumple:
-                todas_cumplen = False
+        if regla.expresion_logica:
+            cumple, det = evaluar_expresion_logica(regla.expresion_logica, memoria_trabajo)
+            todas_cumplen = bool(cumple)
+            condiciones_evaluadas.append({
+                "expresion_logica": regla.expresion_logica,
+                "resultado": todas_cumplen,
+                "detalle": det,
+            })
+        else:
+            todas_cumplen = bool(regla.condiciones)
+            for condicion in (regla.condiciones or []):
+                cumple = EvaluadorCondicion.evaluar(
+                    condicion=condicion,
+                    memoria_trabajo=memoria_trabajo,
+                    mapa_ids_a_nombres=mapa_ids_a_nombres,
+                )
+                condiciones_evaluadas.append({"condicion_id": str(condicion.id), "resultado": bool(cumple)})
+                if not cumple:
+                    todas_cumplen = False
 
         trazas.append(
             EntradaTraza(
@@ -412,9 +491,11 @@ class MotorInferencia:
         hechos_iniciales: List[Hecho],
         reglas: List[Regla],
         variables: Optional[List[Variable]] = None,
+        metas: Optional[List[str]] = None,
     ) -> ResultadoInferencia:
         """
         Ejecuta el ciclo completo de encadenamiento hacia adelante, registrando pasos y conflictos.
+        Soporta vector opcional de metas para parada temprana (Early Stopping).
         """
         variables = variables or []
         mapa_ids_a_nombres = self.construir_mapa_ids(hechos_iniciales, reglas, variables)
@@ -436,6 +517,24 @@ class MotorInferencia:
             )
 
         logger.debug(f"Memoria de trabajo inicial: {memoria_trabajo}")
+
+        # Si las metas ya se encuentran unificadas en el vector de entrada inicial
+        if metas and self.todas_unificadas(memoria_trabajo, metas):
+            clasificacion = self.clasificar_metas(memoria_trabajo, metas)
+            concl_inicial = str(list(clasificacion["unificadas"].values())[-1]) if clasificacion["unificadas"] else None
+            return ResultadoInferencia(
+                estado=EstadoEjecucion.FINALIZADA,
+                hechos_iniciales=hechos_iniciales_reporte,
+                hechos_generados=[],
+                reglas_evaluadas=[],
+                conclusion_final=concl_inicial,
+                total_iteraciones=0,
+                pasos=[],
+                metas_solicitadas=metas,
+                metas_unificadas=clasificacion["unificadas"],
+                metas_pendientes=clasificacion["pendientes"],
+                motivo_parada="METAS_ALCANZADAS",
+            )
 
         reglas_ejecutadas: Set[UUID] = set()
         trazas_acumuladas: List[EntradaTraza] = []
@@ -467,6 +566,7 @@ class MotorInferencia:
                 variables=variables,
                 mapa_ids_a_nombres=mapa_ids_a_nombres,
                 numero_paso=iteracion,
+                metas=metas,
             )
 
             # Re-secuenciar orden de trazas globalmente
@@ -477,9 +577,6 @@ class MotorInferencia:
 
             pasos_ejecutados.append(resultado_paso)
 
-            if resultado_paso.finalizado:
-                break
-
             # Actualizar memoria y estado
             memoria_trabajo = resultado_paso.memoria_trabajo_post
             if resultado_paso.regla_disparada:
@@ -489,8 +586,19 @@ class MotorInferencia:
                 hechos_generados_totales.append(hg)
                 conclusion_final = str(hg["valor"])
 
+            if resultado_paso.finalizado:
+                break
+
+            # Criterio de parada temprana si se unificaron todas las metas tras el disparo
+            if metas and self.todas_unificadas(memoria_trabajo, metas):
+                break
+
         if not conclusion_final and hechos_generados_totales:
             conclusion_final = str(hechos_generados_totales[-1]["valor"])
+
+        clasificacion_final = self.clasificar_metas(memoria_trabajo, metas)
+        metas_cumplidas = bool(metas and self.todas_unificadas(memoria_trabajo, metas))
+        motivo_final = "METAS_ALCANZADAS" if metas_cumplidas else ("SATURACION" if metas else "FINALIZADA")
 
         return ResultadoInferencia(
             estado=EstadoEjecucion.FINALIZADA,
@@ -500,4 +608,8 @@ class MotorInferencia:
             conclusion_final=conclusion_final,
             total_iteraciones=iteracion,
             pasos=pasos_ejecutados,
+            metas_solicitadas=metas or [],
+            metas_unificadas=clasificacion_final["unificadas"],
+            metas_pendientes=clasificacion_final["pendientes"],
+            motivo_parada=motivo_final,
         )

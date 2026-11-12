@@ -146,6 +146,12 @@ class ReglaModel(models.Model):
         verbose_name="Factor de certeza",
     )
     activa = models.BooleanField(default=True, verbose_name="¿Activa?")
+    expresion_logica = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Expresión lógica de premisas (AND, OR, paréntesis)",
+        help_text="Expresión booleana arbitraria como (A=b AND B=0) OR (P>10 AND P<100)",
+    )
 
     class Meta:
         db_table = "reglas"

@@ -420,6 +420,7 @@ class DjangoReglaRepositorio(ReglaRepositorio):
             prioridad=m.prioridad,
             factor_certeza=m.factor_certeza,
             activa=m.activa,
+            expresion_logica=m.expresion_logica,
             condiciones=condiciones,
             conclusiones=conclusiones,
         )
@@ -467,6 +468,7 @@ class DjangoReglaRepositorio(ReglaRepositorio):
                 "prioridad": regla.prioridad,
                 "factor_certeza": regla.factor_certeza,
                 "activa": regla.activa,
+                "expresion_logica": regla.expresion_logica,
             },
         )
         return self._a_entidad(m)

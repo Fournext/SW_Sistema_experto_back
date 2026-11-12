@@ -57,10 +57,11 @@ class InferenciaEjecutarAPIView(APIView):
         ser = IniciarSimulacionEntradaSerializer(data=request.data or {})
         ser.is_valid(raise_exception=True)
         hechos_custom = ser.validated_data.get("hechos_iniciales") or None
+        metas = ser.validated_data.get("metas") or None
 
         caso_uso = EjecutarInferencia()
         resultado = caso_uso.ejecutar(
-            sistema_experto_id=id, hechos_personalizados=hechos_custom
+            sistema_experto_id=id, hechos_personalizados=hechos_custom, metas=metas
         )
         datos = EjecutarInferenciaSalidaSerializer(resultado).data
         return respuesta_creada(datos=datos, mensaje="Inferencia ejecutada correctamente.")

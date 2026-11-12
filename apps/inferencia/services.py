@@ -94,6 +94,7 @@ class EjecutarInferencia:
         self,
         sistema_experto_id: UUID,
         hechos_personalizados: Optional[List[Dict[str, Any]]] = None,
+        metas: Optional[List[str]] = None,
     ) -> ResultadoInferencia:
         se = self.repo_se.obtener_por_id(sistema_experto_id)
         if not se:
@@ -165,6 +166,7 @@ class EjecutarInferencia:
                 hechos_iniciales=hechos_a_usar,
                 reglas=reglas_activas,
                 variables=variables,
+                metas=metas,
             )
             resultado.ejecucion_id = ejecucion.id
 

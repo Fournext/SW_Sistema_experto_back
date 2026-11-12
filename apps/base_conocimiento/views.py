@@ -554,6 +554,7 @@ class ReglaCompletaCreateAPIView(APIView):
             descripcion=serializer.validated_data.get("descripcion"),
             factor_certeza=serializer.validated_data.get("factor_certeza"),
             activa=serializer.validated_data.get("activa", True),
+            expresion_logica=serializer.validated_data.get("expresion_logica"),
             condiciones=serializer.validated_data.get("condiciones", []),
             conclusiones=serializer.validated_data.get("conclusiones", []),
             posicion_x=serializer.validated_data.get("posicion_x"),
@@ -584,6 +585,7 @@ class ReglaCompletaDetailAPIView(APIView):
             descripcion=serializer.validated_data.get("descripcion"),
             factor_certeza=serializer.validated_data.get("factor_certeza"),
             activa=serializer.validated_data.get("activa", True),
+            expresion_logica=serializer.validated_data.get("expresion_logica"),
             condiciones=serializer.validated_data.get("condiciones", []),
             conclusiones=serializer.validated_data.get("conclusiones", []),
         )
