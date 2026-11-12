@@ -1,10 +1,47 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.sqlite3
-*.sqlite3.bak
-.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environments
 .venv/
+.venv
 venv/
-*.log
+venv
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Environment variables
 .env
+.env.*
+!.env.example
+
+# SQLite Database
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3.bak
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs
+*.log
+logs/
+
+# IDE / Editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
