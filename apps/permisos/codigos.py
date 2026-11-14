@@ -120,6 +120,13 @@ class Permisos:
     CENTRAL_SESIONES_REVOCAR    = _codigo("central_sesiones_revocar")
     CENTRAL_BITACORA_VER        = _codigo("central_bitacora_ver")
 
+    # 8. Laboratorio de Algoritmos (5)
+    LABORATORIO_VER             = _codigo("laboratorio_ver")
+    LABORATORIO_EJECUTAR        = _codigo("laboratorio_ejecutar")
+    LABORATORIO_PROGRAMAS_CREAR = _codigo("laboratorio_programas_crear")
+    LABORATORIO_PROGRAMAS_EDITAR= _codigo("laboratorio_programas_editar")
+    LABORATORIO_PROGRAMAS_ELIMINAR=_codigo("laboratorio_programas_eliminar")
+
     TODOS: frozenset[str] = frozenset()
 
 
@@ -195,6 +202,13 @@ CATALOGO: tuple[DefinicionPermiso, ...] = (
     DefinicionPermiso(Permisos.CENTRAL_SESIONES_VER, "Ver sesiones activas", "Permite auditar sesiones activas de los usuarios.", "central", "sesiones_ver"),
     DefinicionPermiso(Permisos.CENTRAL_SESIONES_REVOCAR, "Revocar sesiones activas", "Permite forzar el cierre de sesión de usuarios conectados.", "central", "sesiones_revocar"),
     DefinicionPermiso(Permisos.CENTRAL_BITACORA_VER, "Ver bitácora de accesos", "Permite auditar ingresos y eventos de seguridad.", "central", "bitacora_ver"),
+
+    # Laboratorio de Algoritmos (5)
+    DefinicionPermiso(Permisos.LABORATORIO_VER, "Ver laboratorio de algoritmos", "Permite acceder y consultar el laboratorio de algoritmos.", "laboratorio", "ver"),
+    DefinicionPermiso(Permisos.LABORATORIO_EJECUTAR, "Ejecutar simulaciones en laboratorio", "Permite compilar y ejecutar algoritmos paso a paso.", "laboratorio", "ejecutar"),
+    DefinicionPermiso(Permisos.LABORATORIO_PROGRAMAS_CREAR, "Crear programas de algoritmos", "Permite crear y guardar nuevos algoritmos en el laboratorio.", "laboratorio", "crear"),
+    DefinicionPermiso(Permisos.LABORATORIO_PROGRAMAS_EDITAR, "Editar programas de algoritmos", "Permite modificar algoritmos guardados.", "laboratorio", "editar"),
+    DefinicionPermiso(Permisos.LABORATORIO_PROGRAMAS_ELIMINAR, "Eliminar programas de algoritmos", "Permite eliminar algoritmos propios.", "laboratorio", "eliminar"),
 )
 
 Permisos.TODOS = frozenset(d.codigo for d in CATALOGO)
@@ -258,6 +272,11 @@ PERMISOS_ESTUDIANTE: tuple[str, ...] = (
     Permisos.ACTIVIDADES_VER,
     Permisos.ACTIVIDADES_RESOLVER,
     Permisos.ENTREGAS_ENVIAR,
+    Permisos.LABORATORIO_VER,
+    Permisos.LABORATORIO_EJECUTAR,
+    Permisos.LABORATORIO_PROGRAMAS_CREAR,
+    Permisos.LABORATORIO_PROGRAMAS_EDITAR,
+    Permisos.LABORATORIO_PROGRAMAS_ELIMINAR,
 )
 
 PERMISOS_ADMIN_CENTRAL: tuple[str, ...] = (

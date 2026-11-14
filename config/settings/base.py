@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.inferencia.apps.InferenciaConfig",
     "apps.validacion.apps.ValidacionConfig",
     "apps.actividades.apps.ActividadesConfig",
+    "apps.laboratorio_algoritmos.apps.LaboratorioAlgoritmosConfig",
 ]
 
 AUTH_USER_MODEL = "usuarios.Usuario"
