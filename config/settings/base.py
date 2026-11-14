@@ -89,10 +89,11 @@ DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
 if "sqlite" in DB_ENGINE:
+    db_name = ":memory:" if DB_NAME == ":memory:" else (BASE_DIR / DB_NAME)
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / DB_NAME,
+            "NAME": db_name,
         }
     }
 else:
