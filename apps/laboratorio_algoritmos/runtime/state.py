@@ -19,12 +19,14 @@ class StackFrame:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "StackFrame":
+    def from_dict(cls, data: dict, identity_map: Optional[Dict[str, Any]] = None) -> "StackFrame":
+        if identity_map is None:
+            identity_map = {}
         return cls(
             nombre_funcion=data.get("nombre_funcion", "main"),
             pc=data.get("pc", 0),
-            variables={k: deserializar_valor(v) for k, v in data.get("variables", {}).items()},
-            pila_operandos=[deserializar_valor(v) for v in data.get("pila_operandos", [])],
+            variables={k: deserializar_valor(v, identity_map) for k, v in data.get("variables", {}).items()},
+            pila_operandos=[deserializar_valor(v, identity_map) for v in data.get("pila_operandos", [])],
         )
 
 
@@ -116,10 +118,19 @@ class VMState:
 
     @classmethod
     def from_dict(cls, data: dict) -> "VMState":
+        identity_map: Dict[str, Any] = {}
+        raw_frames = data.get("frames", [])
+        # Pasada previa de tope a fondo para registrar el estado más actualizado de BH y objetos mutables
+        for f_data in reversed(raw_frames):
+            StackFrame.from_dict(f_data, identity_map)
+
+        # Construcción real de frames compartiendo las mismas instancias de objetos
+        frames = [StackFrame.from_dict(f, identity_map) for f in raw_frames]
+
         preg_data = data.get("pregunta_pendiente")
         pregunta = PreguntaPendiente.from_dict(preg_data) if preg_data else None
         return cls(
-            frames=[StackFrame.from_dict(f) for f in data.get("frames", [])],
+            frames=frames,
             marcas_reglas=set(data.get("marcas_reglas", [])),
             estado=data.get("estado", "LISTA"),
             pregunta_pendiente=pregunta,

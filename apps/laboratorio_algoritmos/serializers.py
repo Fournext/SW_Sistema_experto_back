@@ -65,6 +65,7 @@ class EstadoVMSalidaSerializer(serializers.Serializer):
 
 class CorridaLaboratorioSalidaSerializer(serializers.ModelSerializer):
     estado_vm = serializers.SerializerMethodField()
+    snapshot_bc = serializers.SerializerMethodField()
 
     class Meta:
         model = CorridaLaboratorioModel
@@ -76,12 +77,16 @@ class CorridaLaboratorioSalidaSerializer(serializers.ModelSerializer):
             "total_pasos",
             "mensaje_salida",
             "estado_vm",
+            "snapshot_bc",
             "creada_en",
             "actualizada_en",
         ]
 
     def get_estado_vm(self, obj):
         return obj.estado_vm_json
+
+    def get_snapshot_bc(self, obj):
+        return obj.snapshot_bc_json
 
 
 class ProgramaAlgoritmoSerializer(serializers.ModelSerializer):

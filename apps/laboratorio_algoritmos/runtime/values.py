@@ -119,6 +119,7 @@ def valores_son_iguales(a: Any, b: Any) -> bool:
 @dataclass
 class ListaValue:
     elementos: List[Any] = field(default_factory=list)
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
     def add(self, elem: Any) -> bool:
         if self.contains(elem):
@@ -153,6 +154,7 @@ class ListaValue:
     def to_dict(self) -> dict:
         return {
             "tipo_objeto": "Lista",
+            "id": self.id,
             "elementos": [serializar_valor(e) for e in self.elementos]
         }
 
@@ -160,6 +162,7 @@ class ListaValue:
 @dataclass
 class PilaValue:
     elementos: List[Any] = field(default_factory=list)
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
     def push(self, elem: Any):
         self.elementos.append(elem)
@@ -178,6 +181,7 @@ class PilaValue:
     def to_dict(self) -> dict:
         return {
             "tipo_objeto": "Pila",
+            "id": self.id,
             "elementos": [serializar_valor(e) for e in self.elementos]
         }
 
@@ -185,6 +189,7 @@ class PilaValue:
 @dataclass
 class ColaValue:
     elementos: List[Any] = field(default_factory=list)
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
     def meter(self, elem: Any):
         self.elementos.append(elem)
@@ -203,6 +208,7 @@ class ColaValue:
     def to_dict(self) -> dict:
         return {
             "tipo_objeto": "Cola",
+            "id": self.id,
             "elementos": [serializar_valor(e) for e in self.elementos]
         }
 
@@ -213,6 +219,7 @@ class BaseHechosValue:
     hechos_por_var: Dict[str, HechoValor] = field(default_factory=dict)
     # Registro de variables consultadas al usuario (incluso si canceló o devolvió null)
     variables_consultadas: Set[str] = field(default_factory=set)
+    id: str = "bh_principal"
 
     def contains(self, variable: VariableRef) -> bool:
         return variable.nombre.strip().lower() in self.hechos_por_var
@@ -243,6 +250,7 @@ class BaseHechosValue:
     def to_dict(self) -> dict:
         return {
             "tipo_objeto": "BaseHechos",
+            "id": getattr(self, "id", "bh_principal"),
             "hechos": {k: v.to_dict() for k, v in self.hechos_por_var.items()},
             "consultadas": list(self.variables_consultadas),
         }
@@ -258,22 +266,33 @@ def serializar_valor(val: Any) -> Any:
     return str(val)
 
 
-def deserializar_valor(val: Any) -> Any:
+def deserializar_valor(val: Any, identity_map: Optional[Dict[str, Any]] = None) -> Any:
+    if identity_map is None:
+        identity_map = {}
     if val is None or isinstance(val, (int, float, bool, str)):
         return val
     if isinstance(val, list):
-        return [deserializar_valor(x) for x in val]
+        return [deserializar_valor(x, identity_map) for x in val]
     if isinstance(val, dict):
         tipo_obj = val.get("tipo_objeto")
         if tipo_obj == "Variable":
-            return VariableRef(
+            v_id = val.get("id", "")
+            if v_id and v_id in identity_map:
+                return identity_map[v_id]
+            v = VariableRef(
                 id=val.get("id", ""),
                 nombre=val.get("nombre", ""),
                 tipo_dato=val.get("tipo_dato", "TEXTO"),
                 es_nativa=val.get("es_nativa", False),
             )
+            if v.id:
+                identity_map[v.id] = v
+            return v
         elif tipo_obj == "Hecho":
-            return HechoValor(
+            h_id = val.get("id", "")
+            if h_id and h_id in identity_map:
+                return identity_map[h_id]
+            h = HechoValor(
                 id=val.get("id", ""),
                 variable_id=val.get("variable_id", ""),
                 variable_nombre=val.get("variable_nombre", val.get("variable", "")),
@@ -281,8 +300,19 @@ def deserializar_valor(val: Any) -> Any:
                 tipo_dato=val.get("tipo_dato", "TEXTO"),
                 origen=val.get("origen", "INICIAL"),
             )
+            if h.id:
+                identity_map[h.id] = h
+            return h
         elif tipo_obj == "Regla":
-            return ReglaRef(
+            r_id = val.get("id", "")
+            if r_id and r_id in identity_map:
+                r = identity_map[r_id]
+                if val.get("marcada"):
+                    r.marcada = True
+                if val.get("disparada"):
+                    r.disparada = True
+                return r
+            r = ReglaRef(
                 id=val.get("id", ""),
                 nombre=val.get("nombre", ""),
                 orden=val.get("orden", 0),
@@ -293,18 +323,55 @@ def deserializar_valor(val: Any) -> Any:
                 marcada=val.get("marcada", False),
                 disparada=val.get("disparada", False),
             )
+            if r.id:
+                identity_map[r.id] = r
+            return r
         elif tipo_obj == "Lista":
-            return ListaValue(elementos=[deserializar_valor(e) for e in val.get("elementos", [])])
+            col_id = val.get("id", "")
+            if col_id and col_id in identity_map:
+                return identity_map[col_id]
+            col = ListaValue(
+                elementos=[deserializar_valor(e, identity_map) for e in val.get("elementos", [])],
+                id=col_id or str(uuid.uuid4())[:8],
+            )
+            if col.id:
+                identity_map[col.id] = col
+            return col
         elif tipo_obj == "Pila":
-            return PilaValue(elementos=[deserializar_valor(e) for e in val.get("elementos", [])])
+            col_id = val.get("id", "")
+            if col_id and col_id in identity_map:
+                return identity_map[col_id]
+            col = PilaValue(
+                elementos=[deserializar_valor(e, identity_map) for e in val.get("elementos", [])],
+                id=col_id or str(uuid.uuid4())[:8],
+            )
+            if col.id:
+                identity_map[col.id] = col
+            return col
         elif tipo_obj == "Cola":
-            return ColaValue(elementos=[deserializar_valor(e) for e in val.get("elementos", [])])
+            col_id = val.get("id", "")
+            if col_id and col_id in identity_map:
+                return identity_map[col_id]
+            col = ColaValue(
+                elementos=[deserializar_valor(e, identity_map) for e in val.get("elementos", [])],
+                id=col_id or str(uuid.uuid4())[:8],
+            )
+            if col.id:
+                identity_map[col.id] = col
+            return col
         elif tipo_obj == "BaseHechos":
-            bh = BaseHechosValue()
+            bh_id = val.get("id", "bh_principal")
+            if bh_id in identity_map:
+                bh = identity_map[bh_id]
+            else:
+                bh = BaseHechosValue(id=bh_id)
+                identity_map[bh_id] = bh
             for k, h_dict in val.get("hechos", {}).items():
-                bh.hechos_por_var[k] = deserializar_valor(h_dict)
-            bh.variables_consultadas = set(val.get("consultadas", []))
+                if k not in bh.hechos_por_var:
+                    bh.hechos_por_var[k] = deserializar_valor(h_dict, identity_map)
+            for c in val.get("consultadas", []):
+                bh.variables_consultadas.add(c)
             return bh
-        return {k: deserializar_valor(v) for k, v in val.items()}
+        return {k: deserializar_valor(v, identity_map) for k, v in val.items()}
     return val
 
