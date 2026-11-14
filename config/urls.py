@@ -28,4 +28,5 @@ urlpatterns = [
     path("api/v1/", include("apps.inferencia.urls", namespace="inferencia")),
     path("api/v1/", include("apps.validacion.urls", namespace="validacion")),
     path("api/v1/", include("apps.actividades.urls", namespace="actividades")),
+    path("api/v1/", include("apps.laboratorio_algoritmos.urls", namespace="laboratorio_algoritmos")),
 ]
