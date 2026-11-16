@@ -176,6 +176,14 @@ class EntregaActividadModel(models.Model):
         related_name="entregas_asociadas",
         verbose_name="Ejecución de inferencia de la simulación",
     )
+    programa_algoritmo = models.ForeignKey(
+        "laboratorio_algoritmos.ProgramaAlgoritmoModel",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="entregas_asociadas",
+        verbose_name="Algoritmo de código asociado a la entrega",
+    )
     fecha_envio = models.DateTimeField(
         null=True, blank=True, verbose_name="Fecha de envío definitivo"
     )

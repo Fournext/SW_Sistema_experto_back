@@ -235,9 +235,15 @@ def datos_entrega(entrega, incluir_contenido=True, usuario=None):
         "creada_en": entrega.creada_en, "actualizada_en": entrega.actualizada_en}
     if incluir_contenido:
         if not (usuario is not None and es_docente(usuario) and entrega.estado != "ENVIADA"):
-            datos.update(solucion_texto=entrega.solucion_texto, hechos_ingresados=entrega.hechos_ingresados,
-                         ejecuciones_ids=entrega.ejecuciones_ids,
-                         ejecucion_inferencia_id=str(entrega.ejecucion_inferencia_id) if entrega.ejecucion_inferencia_id else None)
+            datos.update(
+                solucion_texto=entrega.solucion_texto,
+                hechos_ingresados=entrega.hechos_ingresados,
+                ejecuciones_ids=entrega.ejecuciones_ids,
+                ejecucion_inferencia_id=str(entrega.ejecucion_inferencia_id) if entrega.ejecucion_inferencia_id else None,
+                programa_algoritmo_id=str(entrega.programa_algoritmo_id) if entrega.programa_algoritmo_id else None,
+                programa_algoritmo_titulo=entrega.programa_algoritmo.titulo if entrega.programa_algoritmo else None,
+                programa_algoritmo_codigo=entrega.programa_algoritmo.codigo_fuente if entrega.programa_algoritmo else None,
+            )
         datos["revisiones"] = [{"id": str(r.id), "numero": r.numero, "snapshot": r.snapshot, "creada_en": r.creada_en,
             "comentarios": [{"id": str(c.id), "revision_id": str(r.id), "autor_id": c.autor_id,
                              "autor_nombre": c.autor.nombre_completo or c.autor.username, "texto": c.texto, "creado_en": c.creado_en}
@@ -254,6 +260,7 @@ class EntregaEntrada(serializers.Serializer):
     hechos_ingresados = serializers.ListField(child=serializers.DictField(), required=False)
     ejecucion_inferencia_id = serializers.UUIDField(required=False, allow_null=True)
     ejecuciones_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
+    programa_algoritmo_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 def _ejecuciones_adjuntas(usuario, a, datos, entrega):
@@ -298,12 +305,12 @@ class EntregaEstudianteV2APIView(APIView):
         d = ser.validated_data
         ejecuciones = _ejecuciones_adjuntas(request.user, a, d, entrega)
         entrega.ejecuciones_ids = [str(e.id) for e in ejecuciones]
-        for campo in ("solucion_texto", "hechos_ingresados", "ejecucion_inferencia_id"):
+        for campo in ("solucion_texto", "hechos_ingresados", "ejecucion_inferencia_id", "programa_algoritmo_id"):
             if campo in d:
                 setattr(entrega, campo, d[campo])
         if enviar:
-            if not entrega.solucion_texto and not entrega.hechos_ingresados and not ejecuciones and a.actividad.tipo != "CREACION_BC":
-                raise ValidationError("Agregue una justificación, datos o una ejecución antes de enviar.")
+            if not entrega.solucion_texto and not entrega.hechos_ingresados and not ejecuciones and not entrega.programa_algoritmo_id and a.actividad.tipo != "CREACION_BC":
+                raise ValidationError("Agregue una justificación, datos, una ejecución o un algoritmo antes de enviar.")
             sistema = sistema_trabajo(a, request.user)
             bc = ejecuciones[-1].bc_snapshot if ejecuciones and a.actividad.tipo == "ANALISIS_BC" else snapshot_bc(sistema)
             entrega.numero_revision += 1
@@ -312,7 +319,10 @@ class EntregaEstudianteV2APIView(APIView):
             entrega.save()
             RevisionEntregaModel.objects.create(entrega=entrega, numero=entrega.numero_revision, snapshot=json_seguro({
                 "solucion_texto": entrega.solucion_texto, "hechos_ingresados": entrega.hechos_ingresados, "bc": bc,
-                "ejecuciones": [_snapshot_ejecucion(e) for e in ejecuciones], "tipo": a.actividad.tipo, "permisos": permisos_actividad(a.actividad)}))
+                "ejecuciones": [_snapshot_ejecucion(e) for e in ejecuciones],
+                "programa_algoritmo_id": str(entrega.programa_algoritmo_id) if entrega.programa_algoritmo_id else None,
+                "programa_algoritmo_codigo": entrega.programa_algoritmo.codigo_fuente if entrega.programa_algoritmo else None,
+                "tipo": a.actividad.tipo, "permisos": permisos_actividad(a.actividad)}))
         else:
             entrega.save()
         return respuesta_exitosa(datos=datos_entrega(entrega, usuario=request.user))

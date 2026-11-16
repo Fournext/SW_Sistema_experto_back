@@ -3,6 +3,7 @@ Vistas de API REST para el Laboratorio de Algoritmos de Inferencia.
 """
 import hashlib
 from typing import Any, Dict
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.views import APIView
@@ -16,6 +17,7 @@ from .lenguaje.lexer import Lexer
 from .lenguaje.parser import Parser
 from .lenguaje.type_checker import TypeChecker
 from .models import (
+    ComparticionProgramaModel,
     CorridaLaboratorioModel,
     PasoEjecucionModel,
     ProgramaAlgoritmoModel,
@@ -36,9 +38,12 @@ from .runtime.vm import EvaluadorReglasSnapshot, VirtualMachine
 from .adapters.knowledge import extraer_snapshot_base_conocimiento, instanciar_entorno_runtime
 from .serializers import (
     AvanzarEjecucionEntradaSerializer,
+    ComparticionProgramaSerializer,
+    CompartirProgramaEntradaSerializer,
     CompilarCodigoEntradaSerializer,
     CompilarCodigoSalidaSerializer,
     CorridaLaboratorioSalidaSerializer,
+    ForkProgramaEntradaSerializer,
     IniciarEjecucionEntradaSerializer,
     ProgramaAlgoritmoSerializer,
     ResponderPreguntaEntradaSerializer,
@@ -79,9 +84,12 @@ def _construir_evaluador(snapshot_bc: Dict[str, Any]) -> EvaluadorReglasSnapshot
         condiciones = []
         for p in r.get("premisas", []):
             condiciones.append({
+                "variable_id": p.get("variable_id", ""),
                 "variable_nombre": p.get("variable", ""),
                 "operador": p.get("operador", "="),
                 "valor_esperado": p.get("valor"),
+                "tipo_dato": p.get("tipo_dato", "TEXTO"),
+                "es_nativa": p.get("es_nativa", False),
             })
         conclusiones = r.get("conclusiones", [])
         concl_dict = {}
@@ -194,8 +202,8 @@ class IniciarEjecucionAPIView(APIView):
             )
 
         # Snapshot de Base de Conocimiento
-        snapshot_bc = {}
-        if sistema_experto_id:
+        snapshot_bc = data.get("snapshot_bc") or {}
+        if not snapshot_bc and sistema_experto_id:
             try:
                 snapshot_bc = extraer_snapshot_base_conocimiento(
                     sistema_experto_id=sistema_experto_id,
@@ -445,7 +453,7 @@ class ProgramasAlgoritmoViewSet(viewsets.ModelViewSet):
         qs = ProgramaAlgoritmoModel.objects.filter(owner=user)
         se_id = self.request.query_params.get("sistema_experto")
         if se_id:
-            qs = qs.filter(sistema_experto_id=se_id)
+            qs = qs.filter(Q(sistema_experto_id=se_id) | Q(sistema_experto__isnull=True))
         return qs
 
     def list(self, request, *args, **kwargs):
@@ -454,12 +462,30 @@ class ProgramasAlgoritmoViewSet(viewsets.ModelViewSet):
         return respuesta_exitosa(datos=serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance)
-        return respuesta_exitosa(datos=serializer.data)
+        pk = kwargs.get("pk")
+        user = request.user
+        programa = ProgramaAlgoritmoModel.objects.filter(pk=pk).first()
+        if not programa:
+            return respuesta_error(mensaje="Programa no encontrado.", codigo_http=status.HTTP_404_NOT_FOUND)
+
+        modo_acceso = "EDICION"
+        if programa.owner_id != user.id:
+            comparticion = ComparticionProgramaModel.objects.filter(
+                programa=programa,
+                curso__matriculas__estudiante=user,
+                curso__matriculas__activo=True,
+                activa=True,
+            ).first()
+            if not comparticion and not user.is_staff and not user.is_superuser:
+                return respuesta_error(mensaje="No tienes acceso a este programa.", codigo_http=status.HTTP_403_FORBIDDEN)
+            if comparticion:
+                modo_acceso = comparticion.modo_acceso
+
+        ser = self.get_serializer(programa, context={"request": request, "modo_acceso": modo_acceso})
+        return respuesta_exitosa(datos=ser.data)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         codigo = serializer.validated_data.get("codigo_fuente", "")
         instancia = serializer.save(owner=self.request.user, version_entero=1)
@@ -475,7 +501,7 @@ class ProgramasAlgoritmoViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer = self.get_serializer(instance, data=request.data, partial=partial, context={"request": request})
         serializer.is_valid(raise_exception=True)
         codigo_nuevo = serializer.validated_data.get("codigo_fuente", "")
         if codigo_nuevo and codigo_nuevo != instance.codigo_fuente:
@@ -503,3 +529,99 @@ class ProgramasAlgoritmoViewSet(viewsets.ModelViewSet):
         revisiones = programa.revisiones.all()
         ser = RevisionProgramaSerializer(revisiones, many=True)
         return respuesta_exitosa(datos=ser.data)
+
+    @action(detail=True, methods=["post"], url_path="compartir")
+    def compartir(self, request, pk=None):
+        """Permite a un docente compartir su algoritmo a un curso con modo LECTURA o COPIA_EDICION."""
+        programa = self.get_object()
+        ser = CompartirProgramaEntradaSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        curso_id = ser.validated_data["curso_id"]
+        modo = ser.validated_data["modo_acceso"]
+
+        from apps.actividades.models import CursoModel
+        curso = get_object_or_404(CursoModel, pk=curso_id)
+        if curso.docente_id != request.user.id and not request.user.is_superuser:
+            return respuesta_error(
+                mensaje="Solo el docente titular puede compartir código a este curso.",
+                codigo_http=status.HTTP_403_FORBIDDEN
+            )
+
+        comparticion, _ = ComparticionProgramaModel.objects.update_or_create(
+            programa=programa,
+            curso=curso,
+            defaults={
+                "docente": request.user,
+                "modo_acceso": modo,
+                "activa": True,
+            }
+        )
+        return respuesta_creada(
+            datos=ComparticionProgramaSerializer(comparticion).data,
+            mensaje=f"Algoritmo compartido exitosamente al curso '{curso.nombre}'."
+        )
+
+    @action(detail=False, methods=["get"], url_path="compartidos")
+    def compartidos(self, request):
+        """Lista los algoritmos compartidos por los docentes a los cursos donde el alumno está matriculado."""
+        user = request.user
+        se_id = request.query_params.get("sistema_experto")
+        qs = ComparticionProgramaModel.objects.filter(
+            curso__matriculas__estudiante=user,
+            curso__matriculas__activo=True,
+            activa=True,
+        ).select_related("programa", "curso", "docente")
+
+        if se_id:
+            qs = qs.filter(Q(programa__sistema_experto_id=se_id) | Q(programa__sistema_experto__isnull=True))
+
+        ser = ComparticionProgramaSerializer(qs, many=True)
+        return respuesta_exitosa(datos=ser.data)
+
+    @action(detail=True, methods=["post"], url_path="fork")
+    def fork(self, request, pk=None):
+        """Crea una copia privada editable para el estudiante de un algoritmo compartido."""
+        user = request.user
+        programa = get_object_or_404(ProgramaAlgoritmoModel, pk=pk)
+
+        # Si no es dueño, validar que esté compartido al estudiante
+        if programa.owner_id != user.id:
+            tiene_acceso = ComparticionProgramaModel.objects.filter(
+                programa=programa,
+                curso__matriculas__estudiante=user,
+                curso__matriculas__activo=True,
+                activa=True,
+            ).exists()
+            if not tiene_acceso and not user.is_superuser:
+                return respuesta_error(
+                    mensaje="No tienes permiso para clonar este programa.",
+                    codigo_http=status.HTTP_403_FORBIDDEN
+                )
+
+        ser_in = ForkProgramaEntradaSerializer(data=request.data)
+        ser_in.is_valid(raise_exception=True)
+        titulo_custom = ser_in.validated_data.get("titulo")
+        nuevo_titulo = titulo_custom if titulo_custom else f"Copia de {programa.titulo}"
+
+        copia = ProgramaAlgoritmoModel.objects.create(
+            owner=user,
+            sistema_experto=programa.sistema_experto,
+            titulo=nuevo_titulo,
+            descripcion=f"Copia privada de '{programa.titulo}' de {programa.owner.username}.",
+            codigo_fuente=programa.codigo_fuente,
+            version_entero=1,
+            programa_origen=programa,
+            es_publico=False,
+        )
+        h = hashlib.sha256(copia.codigo_fuente.encode("utf-8")).hexdigest()
+        RevisionProgramaModel.objects.create(
+            programa=copia,
+            numero_revision=1,
+            codigo_fuente=copia.codigo_fuente,
+            hash_fuente=h,
+        )
+        ser_out = self.get_serializer(copia, context={"request": request, "modo_acceso": "EDICION"})
+        return respuesta_creada(
+            datos=ser_out.data,
+            mensaje="Copia creada con éxito. Ahora puedes editar tu propia versión privada."
+        )

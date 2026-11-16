@@ -310,7 +310,11 @@ class VirtualMachine:
         if op == OpCode.LOAD_MEMBER:
             obj = frame.pila_operandos.pop()
             miembro = inst.arg
-            if isinstance(obj, list) and miembro == "length":
+            if obj is None:
+                raise RuntimeLaboratorioError(f"Intento de acceder a la propiedad '{miembro}' en una referencia nula (null).", span=inst.span, codigo="ARGUMENTO_NULO")
+            if isinstance(obj, (list, tuple)) and miembro == "length":
+                frame.pila_operandos.append(len(obj))
+            elif isinstance(obj, str) and miembro == "length":
                 frame.pila_operandos.append(len(obj))
             elif isinstance(obj, (ListaValue, PilaValue, ColaValue, BaseHechosValue)) and miembro == "length":
                 frame.pila_operandos.append(obj.length())
@@ -339,6 +343,11 @@ class VirtualMachine:
                     frame.pila_operandos.append(obj.tipo_dato)
                 elif miembro == "es_nativa":
                     frame.pila_operandos.append(obj.es_nativa)
+                elif miembro == "marcada":
+                    frame.pila_operandos.append(
+                        obj.id in self.estado.variables_consultadas or
+                        obj.nombre.strip().lower() in self.estado.variables_consultadas
+                    )
                 else:
                     raise RuntimeLaboratorioError(f"Propiedad '{miembro}' no soportada en Variable.", span=inst.span)
             elif hasattr(obj, miembro):
@@ -357,6 +366,14 @@ class VirtualMachine:
                 else:
                     self.estado.marcas_reglas.discard(obj.id)
                 setattr(obj, "marcada", bool(val))
+            elif isinstance(obj, VariableRef) and miembro == "marcada":
+                if val:
+                    self.estado.variables_consultadas.add(obj.id)
+                    self.estado.variables_consultadas.add(obj.nombre.strip().lower())
+                else:
+                    self.estado.variables_consultadas.discard(obj.id)
+                    self.estado.variables_consultadas.discard(obj.nombre.strip().lower())
+                setattr(obj, "marcada", bool(val))
             elif hasattr(obj, miembro):
                 setattr(obj, miembro, val)
             else:
@@ -371,8 +388,9 @@ class VirtualMachine:
             if self._es_builtin(func_nombre):
                 res = self._ejecutar_builtin(func_nombre, argumentos, inst.span)
                 if self.estado.estado == "ESPERANDO_ENTRADA":
-                    # Rebobinar PC para que al reanudar se complete la asignación
-                    frame.pc -= 1
+                    # Al suspender para esperar respuesta de consulta interactiva, pausar la VM.
+                    # No rebobinamos frame.pc porque los argumentos ya fueron consumidos de la pila;
+                    # resolver_pregunta colocará el Hecho respuesta en la pila para la siguiente instrucción (ej. STORE_VAR).
                     return True
                 if res is not None:
                     frame.pila_operandos.append(res)
@@ -416,10 +434,11 @@ class VirtualMachine:
 
     def _es_builtin(self, nombre: str) -> bool:
         return nombre in (
-            "Disparar", "DispararTodos", "marcada", "Marcar", "DesmarcarReglas",
-            "HechoNativo", "VariablesPremisa", "ObtenerHechosNativos", "Consultada",
-            "Preguntar", "TodasUnificadas", "Mostrar", "println", "print", "MostrarLosHechosDisparados",
-            "MostrarMeta", "RegistrarPasada"
+            "Disparar", "DispararTodos", "marcada", "Marcar", "marcar", "DesmarcarReglas",
+            "DesmarcarVariables", "MarcarVariablesDeLaBH", "HechoNativo", "VariablesPremisa",
+            "getVarPremisa", "ObtenerHechosNativos", "Consultada",
+            "Preguntar", "Pregunta", "TodasUnificadas", "Mostrar", "println", "print",
+            "MostrarLosHechosDisparados", "MostrarMeta", "RegistrarPasada"
         )
 
     def _ejecutar_builtin(self, nombre: str, args: List[Any], span: Optional[SourceSpan]) -> Any:
@@ -436,37 +455,131 @@ class VirtualMachine:
             return hecho_res
 
         if nombre == "marcada":
-            regla = args[0]
-            if not isinstance(regla, ReglaRef):
-                raise RuntimeLaboratorioError("marcada(r) espera una Regla.", span=span)
-            return regla.id in self.estado.marcas_reglas
+            arg = args[0]
+            if isinstance(arg, ReglaRef):
+                return arg.id in self.estado.marcas_reglas or getattr(arg, "marcada", False)
+            elif isinstance(arg, VariableRef):
+                return (
+                    arg.id in self.estado.variables_consultadas or
+                    arg.nombre.strip().lower() in self.estado.variables_consultadas or
+                    getattr(arg, "marcada", False)
+                )
+            elif isinstance(arg, str):
+                return arg.strip().lower() in self.estado.variables_consultadas
+            raise RuntimeLaboratorioError("marcada(x) espera una Regla o Variable.", span=span)
 
-        if nombre == "Marcar":
-            regla = args[0]
-            if not isinstance(regla, ReglaRef):
-                raise RuntimeLaboratorioError("Marcar(r) espera una Regla.", span=span)
-            self.estado.marcas_reglas.add(regla.id)
-            setattr(regla, "marcada", True)
+        if nombre in ("Marcar", "marcar"):
+            arg = args[0]
+            if isinstance(arg, ReglaRef):
+                self.estado.marcas_reglas.add(arg.id)
+                setattr(arg, "marcada", True)
+                self.estado.eventos.append(EventoTraza(
+                    tipo="REGLA_MARCADA",
+                    descripcion=f"Regla {arg.nombre} marcada.",
+                    datos={"regla_id": arg.id, "nombre": arg.nombre}
+                ))
+                return None
+            elif isinstance(arg, (VariableRef, str)):
+                var_id = arg.id if isinstance(arg, VariableRef) else arg
+                var_nom = (arg.nombre if isinstance(arg, VariableRef) else arg).strip().lower()
+                self.estado.variables_consultadas.add(var_id)
+                self.estado.variables_consultadas.add(var_nom)
+                if isinstance(arg, VariableRef):
+                    setattr(arg, "marcada", True)
+                for f in self.estado.frames:
+                    for val in f.variables.values():
+                        if isinstance(val, BaseHechosValue):
+                            val.variables_consultadas.add(var_id)
+                            val.variables_consultadas.add(var_nom)
+                self.estado.eventos.append(EventoTraza(
+                    tipo="VARIABLE_MARCADA",
+                    descripcion=f"Variable '{var_nom}' marcada.",
+                    datos={"variable": var_nom}
+                ))
+                return None
+            raise RuntimeLaboratorioError("marcar(x) espera una Regla o Variable.", span=span)
+
+        if nombre == "DesmarcarReglas":
+            if not args or args[0] is None:
+                self.estado.marcas_reglas.clear()
+            else:
+                reglas = args[0]
+                elems = reglas.elementos if isinstance(reglas, ListaValue) else (reglas if isinstance(reglas, list) else [])
+                for r in elems:
+                    if isinstance(r, ReglaRef):
+                        self.estado.marcas_reglas.discard(r.id)
+                        setattr(r, "marcada", False)
             self.estado.eventos.append(EventoTraza(
-                tipo="REGLA_MARCADA",
-                descripcion=f"Regla {regla.nombre} marcada.",
-                datos={"regla_id": regla.id, "nombre": regla.nombre}
+                tipo="DESMARCAR_REGLAS",
+                descripcion="Reglas desmarcadas."
             ))
             return None
 
-        if nombre == "DesmarcarReglas":
-            reglas = args[0]
-            elems = reglas.elementos if isinstance(reglas, ListaValue) else (reglas if isinstance(reglas, list) else [])
-            for r in elems:
-                if isinstance(r, ReglaRef):
-                    self.estado.marcas_reglas.discard(r.id)
-                    setattr(r, "marcada", False)
+        if nombre == "DesmarcarVariables":
+            if not args or args[0] is None:
+                self.estado.variables_consultadas.clear()
+                for f in self.estado.frames:
+                    for val in f.variables.values():
+                        if isinstance(val, BaseHechosValue):
+                            val.variables_consultadas.clear()
+            else:
+                vars_in = args[0]
+                elems = vars_in.elementos if isinstance(vars_in, ListaValue) else (vars_in if isinstance(vars_in, list) else [vars_in])
+                for v in elems:
+                    var_id = v.id if isinstance(v, VariableRef) else str(v)
+                    var_nom = (v.nombre if isinstance(v, VariableRef) else str(v)).strip().lower()
+                    self.estado.variables_consultadas.discard(var_id)
+                    self.estado.variables_consultadas.discard(var_nom)
+                    if isinstance(v, VariableRef):
+                        setattr(v, "marcada", False)
+                    for f in self.estado.frames:
+                        for val in f.variables.values():
+                            if isinstance(val, BaseHechosValue):
+                                val.variables_consultadas.discard(var_id)
+                                val.variables_consultadas.discard(var_nom)
+            self.estado.eventos.append(EventoTraza(
+                tipo="DESMARCAR_VARIABLES",
+                descripcion="Variables desmarcadas."
+            ))
             return None
 
-        if nombre == "Preguntar":
+        if nombre == "MarcarVariablesDeLaBH":
+            bhs: List[BaseHechosValue] = []
+            if args and isinstance(args[0], BaseHechosValue):
+                bhs.append(args[0])
+            else:
+                for f in self.estado.frames:
+                    for val in f.variables.values():
+                        if isinstance(val, BaseHechosValue) and val not in bhs:
+                            bhs.append(val)
+            for bh in bhs:
+                for h in bh.hechos_por_var.values():
+                    v_id = getattr(h, "variable_id", None) or f"var_{h.variable_nombre}"
+                    v_nom = h.variable_nombre.strip().lower()
+                    self.estado.variables_consultadas.add(v_id)
+                    self.estado.variables_consultadas.add(v_nom)
+                    bh.variables_consultadas.add(v_id)
+                    bh.variables_consultadas.add(v_nom)
+            self.estado.eventos.append(EventoTraza(
+                tipo="MARCAR_VARIABLES_BH",
+                descripcion="Variables presentes en BH marcadas."
+            ))
+            return None
+
+        if nombre in ("Preguntar", "Pregunta"):
             texto, var = str(args[0]), args[1]
             if not isinstance(var, VariableRef):
-                raise RuntimeLaboratorioError("Preguntar(texto, v) espera una Variable.", span=span)
+                raise RuntimeLaboratorioError(f"{nombre}(texto, v) espera una Variable.", span=span)
+
+            # Registrar como consultada en el estado de la VM y en BH para evitar ciclos
+            self.estado.variables_consultadas.add(var.id)
+            self.estado.variables_consultadas.add(var.nombre.strip().lower())
+            setattr(var, "marcada", True)
+            for f in self.estado.frames:
+                for val in f.variables.values():
+                    if isinstance(val, BaseHechosValue):
+                        val.variables_consultadas.add(var.id)
+                        val.variables_consultadas.add(var.nombre.strip().lower())
 
             # Suspender VM y esperar interacción del usuario
             id_preg = str(uuid.uuid4())[:8]
@@ -482,6 +595,125 @@ class VirtualMachine:
                 descripcion=f"Consulta al usuario: {texto} ({var.nombre})",
                 datos={"id_pregunta": id_preg, "variable": var.nombre}
             ))
+            return None
+
+        if nombre == "VariablesPremisa":
+            regla = args[0]
+            if not isinstance(regla, ReglaRef):
+                raise RuntimeLaboratorioError("VariablesPremisa(r) espera una Regla.", span=span)
+
+            vars_list: List[VariableRef] = []
+            vistos = set()
+
+            premisas = getattr(regla, "premisas", []) or []
+            if not premisas and self.evaluador_reglas:
+                datos = self.evaluador_reglas.reglas_datos.get(regla.id, {})
+                premisas = datos.get("condiciones", [])
+
+            for p in premisas:
+                var_nom = p.get("variable") or p.get("variable_nombre") or ""
+                if var_nom and var_nom not in vistos:
+                    vistos.add(var_nom)
+                    vars_list.append(VariableRef(
+                        id=p.get("variable_id") or f"var_{var_nom}",
+                        nombre=var_nom,
+                        tipo_dato=p.get("tipo_dato", "TEXTO"),
+                        es_nativa=p.get("es_nativa", False),
+                    ))
+            return vars_list
+
+        if nombre == "getVarPremisa":
+            regla = args[0]
+            if not isinstance(regla, ReglaRef):
+                raise RuntimeLaboratorioError("getVarPremisa(r) espera una Regla.", span=span)
+            premisas = getattr(regla, "premisas", []) or []
+            if not premisas and self.evaluador_reglas:
+                datos = self.evaluador_reglas.reglas_datos.get(regla.id, {})
+                premisas = datos.get("condiciones", [])
+            if not premisas:
+                return None
+            p = premisas[0]
+            var_nom = p.get("variable") or p.get("variable_nombre") or ""
+            return VariableRef(
+                id=p.get("variable_id") or f"var_{var_nom}",
+                nombre=var_nom,
+                tipo_dato=p.get("tipo_dato", "TEXTO"),
+                es_nativa=p.get("es_nativa", False),
+            )
+
+        if nombre == "Consultada":
+            var = args[0]
+            if isinstance(var, VariableRef):
+                var_nom = var.nombre.strip().lower()
+                var_id = var.id
+            elif isinstance(var, str):
+                var_nom = var.strip().lower()
+                var_id = var
+            else:
+                raise RuntimeLaboratorioError("Consultada(v) espera una Variable o String.", span=span)
+
+            if var_id in self.estado.variables_consultadas or var_nom in self.estado.variables_consultadas:
+                return True
+
+            for f in self.estado.frames:
+                for val in f.variables.values():
+                    if isinstance(val, BaseHechosValue):
+                        if var_nom in val.variables_consultadas or var_id in val.variables_consultadas:
+                            return True
+            return False
+
+        if nombre == "HechoNativo":
+            var = args[0]
+            if not isinstance(var, VariableRef):
+                raise RuntimeLaboratorioError("HechoNativo(v) espera una Variable.", span=span)
+            return getattr(var, "es_nativa", False)
+
+        if nombre == "ObtenerHechosNativos":
+            reglas = args[0]
+            elems = reglas.elementos if isinstance(reglas, ListaValue) else (reglas if isinstance(reglas, list) else [])
+            vars_nativas: List[VariableRef] = []
+            vistos = set()
+            for r in elems:
+                if isinstance(r, ReglaRef):
+                    premisas = getattr(r, "premisas", []) or []
+                    if not premisas and self.evaluador_reglas:
+                        premisas = self.evaluador_reglas.reglas_datos.get(r.id, {}).get("condiciones", [])
+                    for p in premisas:
+                        var_nom = p.get("variable") or p.get("variable_nombre") or ""
+                        if var_nom and var_nom not in vistos:
+                            vistos.add(var_nom)
+                            es_nat = p.get("es_nativa", True)
+                            vars_nativas.append(VariableRef(
+                                id=p.get("variable_id") or f"var_{var_nom}",
+                                nombre=var_nom,
+                                tipo_dato=p.get("tipo_dato", "TEXTO"),
+                                es_nativa=es_nat,
+                            ))
+            return ListaValue(vars_nativas)
+
+        if nombre == "DispararTodos":
+            regla, bh = args[0], args[1]
+            if not isinstance(regla, ReglaRef) or not isinstance(bh, BaseHechosValue):
+                raise RuntimeLaboratorioError("DispararTodos(r, bh) espera Regla y BaseHechos.", span=span)
+            hecho_res = self.evaluador_reglas.evaluar_disparo(regla, bh)
+            self.estado.eventos.append(EventoTraza(
+                tipo="EVALUACION_REGLA",
+                descripcion=f"Evaluando regla {regla.nombre} (DispararTodos): {'Disparó' if hecho_res else 'No disparó'}",
+                datos={"regla": regla.nombre, "disparo": bool(hecho_res)}
+            ))
+            return [hecho_res] if hecho_res else []
+
+        if nombre == "MostrarMeta":
+            meta, bh = args[0], args[1]
+            if not isinstance(meta, VariableRef) or not isinstance(bh, BaseHechosValue):
+                raise RuntimeLaboratorioError("MostrarMeta(meta, bh) espera Variable y BaseHechos.", span=span)
+            h = bh.get(meta)
+            if h:
+                msg = f"Meta alcanzada: {meta.nombre} = {h.valor}"
+            else:
+                msg = f"Meta no alcanzada: {meta.nombre}"
+            self.estado.salidas_texto.append(msg)
+            self.estado.eventos.append(EventoTraza(tipo="SALIDA_TEXTO", descripcion=msg))
             return None
 
         if nombre in ("Mostrar", "println", "print"):
@@ -519,6 +751,20 @@ class VirtualMachine:
         if obj is None:
             raise RuntimeLaboratorioError(f"Intento de llamar al método '{metodo}' sobre una referencia nula (NullPointerException).", span=span, codigo="ARGUMENTO_NULO")
 
+        if isinstance(obj, list):
+            if metodo == "length": return len(obj)
+            if metodo == "vacia": return len(obj) == 0
+            if metodo == "add":
+                obj.append(args[0])
+                return True
+            if metodo == "contains":
+                return any(valores_son_iguales(elem, args[0]) for elem in obj)
+            if metodo == "get":
+                idx = args[0]
+                if isinstance(idx, int) and 0 <= idx < len(obj):
+                    return obj[idx]
+                raise RuntimeLaboratorioError(f"Índice fuera de rango: {idx}.", span=span)
+
         if isinstance(obj, BaseHechosValue):
             if metodo == "length": return obj.length()
             if metodo == "contains": return obj.contains(args[0])
@@ -552,6 +798,40 @@ class VirtualMachine:
             if metodo == "vacia": return obj.vacia()
             if metodo == "meter": return obj.meter(args[0])
             if metodo == "pop": return obj.pop()
+
+        if isinstance(obj, ReglaRef):
+            if metodo == "getVarPremisa":
+                premisas = getattr(obj, "premisas", []) or []
+                if not premisas and self.evaluador_reglas:
+                    datos = self.evaluador_reglas.reglas_datos.get(obj.id, {})
+                    premisas = datos.get("condiciones", [])
+                if not premisas:
+                    return None
+                p = premisas[0]
+                var_nom = p.get("variable") or p.get("variable_nombre") or ""
+                return VariableRef(
+                    id=p.get("variable_id") or f"var_{var_nom}",
+                    nombre=var_nom,
+                    tipo_dato=p.get("tipo_dato", "TEXTO"),
+                    es_nativa=p.get("es_nativa", False),
+                )
+            if metodo == "getNombre":
+                return obj.nombre
+
+        if isinstance(obj, HechoValor):
+            if metodo == "getVar":
+                return VariableRef(
+                    id=getattr(obj, "variable_id", None) or f"var_{obj.variable_nombre}",
+                    nombre=obj.variable_nombre,
+                    tipo_dato=obj.tipo_dato,
+                    es_nativa=False,
+                )
+            if metodo == "getValorTexto":
+                return str(obj.valor)
+
+        if isinstance(obj, VariableRef):
+            if metodo == "getNombre":
+                return obj.nombre
 
         raise RuntimeLaboratorioError(f"Método '{metodo}' no existe en {type(obj).__name__}.", span=span)
 

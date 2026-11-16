@@ -221,11 +221,23 @@ class BaseHechosValue:
     variables_consultadas: Set[str] = field(default_factory=set)
     id: str = "bh_principal"
 
-    def contains(self, variable: VariableRef) -> bool:
-        return variable.nombre.strip().lower() in self.hechos_por_var
+    def contains(self, variable: Any) -> bool:
+        if isinstance(variable, VariableRef):
+            nom = variable.nombre
+        elif isinstance(variable, HechoValor):
+            nom = variable.variable_nombre
+        else:
+            nom = str(variable)
+        return nom.strip().lower() in self.hechos_por_var
 
-    def get(self, variable: VariableRef) -> Optional[HechoValor]:
-        return self.hechos_por_var.get(variable.nombre.strip().lower())
+    def get(self, variable: Any) -> Optional[HechoValor]:
+        if isinstance(variable, VariableRef):
+            nom = variable.nombre
+        elif isinstance(variable, HechoValor):
+            nom = variable.variable_nombre
+        else:
+            nom = str(variable)
+        return self.hechos_por_var.get(nom.strip().lower())
 
     def add(self, hecho: HechoValor) -> bool:
         var_norm = hecho.variable_nombre.strip().lower()
