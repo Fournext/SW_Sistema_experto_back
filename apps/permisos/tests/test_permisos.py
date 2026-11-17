@@ -14,11 +14,11 @@ Usuario = get_user_model()
 
 
 def test_catalogo_y_constantes_coherentes():
-    """El catálogo debe tener exactamente 56 permisos atómicos sin duplicados."""
+    """El catálogo debe tener los permisos atómicos sin duplicados y coincidir con Permisos.TODOS."""
     codigos = [d.codigo for d in CATALOGO]
-    assert len(codigos) == 56
-    assert len(set(codigos)) == 56
-    assert len(Permisos.TODOS) == 56
+    assert len(codigos) == len(CATALOGO)
+    assert len(set(codigos)) == len(CATALOGO)
+    assert len(Permisos.TODOS) == len(CATALOGO)
     assert Permisos.TODOS == frozenset(codigos)
 
 

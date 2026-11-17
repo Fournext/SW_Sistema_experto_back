@@ -86,8 +86,14 @@ def extraer_snapshot_base_conocimiento(
         premisas = []
         for cond in r.condiciones.all().order_by("orden"):
             var_nombre = cond.variable.nombre if cond.variable else (cond.hecho.nombre if cond.hecho else "")
+            var_id = str(cond.variable.id) if cond.variable else (str(cond.hecho.id) if cond.hecho else f"var_{var_nombre}")
+            var_tipo = cond.variable.tipo_dato if cond.variable else "TEXTO"
+            es_nativa = (cond.variable.es_inicial or bool(cond.variable.pregunta)) if cond.variable else False
             premisas.append({
                 "variable": var_nombre,
+                "variable_id": var_id,
+                "tipo_dato": var_tipo,
+                "es_nativa": es_nativa,
                 "operador": cond.operador,
                 "valor": cond.valor_esperado,
             })
@@ -99,8 +105,14 @@ def extraer_snapshot_base_conocimiento(
                 if concl.variable_resultante
                 else (concl.hecho_resultante.nombre if concl.hecho_resultante else "")
             )
+            var_id = (
+                str(concl.variable_resultante.id)
+                if concl.variable_resultante
+                else (str(concl.hecho_resultante.id) if concl.hecho_resultante else f"var_{var_nombre}")
+            )
             conclusiones.append({
                 "variable": var_nombre,
+                "variable_id": var_id,
                 "valor": concl.valor_resultante,
             })
 

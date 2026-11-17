@@ -109,60 +109,81 @@ void FWC(Regla[] R, BaseHechos BH, Lista<Variable> metas) {
 }
 """
     },
+]
+
+# Algoritmos de ejercicios prácticos asignados a los docentes
+EJERCICIOS_ALGORITMOS = [
     {
         "id": "ejercicio-7-consulta-previa",
-        "titulo": "4. Ejercicio 7: Consulta Previa a Primera Regla No Marcada",
+        "titulo": "Ejercicio 7: Consulta Previa a Primera Regla No Marcada",
         "descripcion": "Antes de la pasada, toma la primera regla libre y consulta la variable nativa de su premisa sin repetir consultas.",
-        "codigo": """void FWCPasada(Regla[] R, BaseHechos BH) {
+        "codigo": """// Función auxiliar: obtiene la primera regla no marcada
+// cuya variable de premisa aún no ha sido marcada (consultada)
+Regla getReglaNoMarcada(Regla[] R) {
+    for (int i = 0; i < R.length; i++) {
+        if (!marcada(R[i])) {
+            Variable v = R[i].getVarPremisa();
+            if (!marcada(v)) {
+                return R[i];
+            }
+        }
+    }
+    return null;
+}
+
+void FWCPasada(Regla[] R, BaseHechos BH) {
     for (int i = 0; i < R.length; i++) {
         if (!marcada(R[i])) {
             Hecho C = Disparar(R[i], BH);
             if (C != null) {
                 BH.add(C);
-                Marcar(R[i]);
+                marcar(R[i]);
             }
         }
     }
 }
 
-// Ejercicio 7: Consulta previa a la primera regla no marcada
+// Ejercicio 7: FWC con getReglaNoMarcada y marcado de variables
 void FWC(Regla[] R, BaseHechos BH) {
-    DesmarcarReglas(R);
+    DesmarcarReglas();
+    DesmarcarVariables();
+    MarcarVariablesDeLaBH();
+    
     int pasada = 0;
     while (true) {
         pasada++;
         RegistrarPasada(pasada);
         
-        // Buscar la primera regla no marcada para consultar su premisa
-        for (int k = 0; k < R.length; k++) {
-            if (!marcada(R[k])) {
-                Variable[] varsPremisa = VariablesPremisa(R[k]);
-                if (varsPremisa.length > 0) {
-                    Variable v = varsPremisa[0];
-                    if (!Consultada(v) && !BH.contains(v)) {
-                        Hecho resp = Preguntar("¿Cuál es el valor de " + v.nombre + "?", v);
-                        if (resp != null) {
-                            BH.add(resp);
-                        }
-                    }
+        int antes = BH.length();
+        
+        // Antes de la pasada a la BC, obtiene la primera regla no-marcada
+        // y consulta al cliente si su variable no está marcada
+        Regla r = getReglaNoMarcada(R);
+        if (r != null) {
+            Variable v = r.getVarPremisa();
+            if (!marcada(v)) {
+                Hecho h = Preguntar("¿Cuál es el valor de " + v.nombre + "?", v);
+                marcar(v);
+                if (h != null) {
+                    BH.add(h);
                 }
-                break;
             }
         }
         
-        int cantidadAntes = BH.length();
         FWCPasada(R, BH);
-        if (cantidadAntes == BH.length()) {
+        
+        if (antes == BH.length()) {
             break;
         }
     }
+    
     MostrarLosHechosDisparados(BH);
 }
 """
     },
     {
         "id": "ejercicio-8-pila-hn",
-        "titulo": "5. Ejercicio 8: Extracción de Hechos Nativos desde Pila HN",
+        "titulo": "Ejercicio 8: Extracción de Hechos Nativos desde Pila HN",
         "descripcion": "En cada ciclo, extrae un Hecho Nativo de la pila HN, lo consulta al usuario y luego ejecuta la pasada de inferencia.",
         "codigo": """void FWCPasada(Regla[] R, BaseHechos BH) {
     for (int i = 0; i < R.length; i++) {
@@ -207,7 +228,7 @@ void FWC(Regla[] R, BaseHechos BH, Pila<Variable> HN) {
     },
     {
         "id": "ejercicio-13-cola-q",
-        "titulo": "6. Ejercicio 13: Recorrido con Cola FIFO de Reglas (Q)",
+        "titulo": "Ejercicio 13: Recorrido con Cola FIFO de Reglas (Q)",
         "descripcion": "Control de inferencia con Cola FIFO Q. Las reglas que no disparan se vuelven a encolar al final si pueden disparar más adelante.",
         "codigo": """// Ejercicio 13: Algoritmo FWC con Cola FIFO Q de Reglas
 void FWC(Cola<Regla> Q, BaseHechos BH) {
