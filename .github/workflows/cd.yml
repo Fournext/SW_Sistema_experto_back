@@ -1,0 +1,43 @@
+name: CD (Notify Deploy)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  notify-deploy:
+    name: Notificar despliegue a EC2
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar despliegue de back en SW_Sistema_experto_despliegue
+        env:
+          DISPATCH_TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$DISPATCH_TOKEN" ]; then
+            echo "Error: falta configurar el secret DEPLOY_DISPATCH_TOKEN en este repositorio." >&2
+            exit 1
+          fi
+
+          curl -sfL -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $DISPATCH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Fournext/SW_Sistema_experto_despliegue/dispatches" \
+            -d '{
+              "event_type": "deploy-back",
+              "client_payload": {
+                "repo": "${{ github.repository }}",
+                "ref": "${{ github.ref_name }}",
+                "sha": "${{ github.sha }}"
+              }
+            }'
