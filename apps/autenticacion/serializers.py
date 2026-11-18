@@ -90,7 +90,7 @@ class RegistroCorporativoStudioSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     nombre_completo = serializers.CharField(max_length=200)
-    rol = serializers.ChoiceField(choices=["Docente", "Estudiante"])
+    rol = serializers.ChoiceField(choices=["Docente", "Estudiante", "Admin"])
     password = serializers.CharField(write_only=True, min_length=6, required=False)
     password_hash = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
@@ -117,6 +117,10 @@ class RegistroCorporativoStudioSerializer(serializers.Serializer):
             if password_hash:
                 usuario.password = password_hash
                 updated_fields.append("password")
+            if rol == "Admin" and not usuario.is_superuser:
+                usuario.is_superuser = True
+                usuario.is_staff = True
+                updated_fields.extend(["is_superuser", "is_staff"])
             if updated_fields:
                 usuario.save(update_fields=updated_fields)
         else:
@@ -126,10 +130,15 @@ class RegistroCorporativoStudioSerializer(serializers.Serializer):
                 nombre_completo=nombre_completo,
                 password=password or secrets.token_urlsafe(24),
                 is_active=True,
+                is_superuser=(rol == "Admin"),
+                is_staff=(rol == "Admin"),
             )
             if password_hash:
                 usuario.password = password_hash
                 usuario.save(update_fields=["password"])
+
+        if rol == "Admin":
+            return usuario
 
         grupo, created = Group.objects.get_or_create(name=rol)
         if created or grupo.permissions.count() == 0:
