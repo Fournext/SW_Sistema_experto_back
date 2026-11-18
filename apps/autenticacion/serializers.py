@@ -92,6 +92,7 @@ class RegistroCorporativoStudioSerializer(serializers.Serializer):
     nombre_completo = serializers.CharField(max_length=200)
     rol = serializers.ChoiceField(choices=["Docente", "Estudiante"])
     password = serializers.CharField(write_only=True, min_length=6, required=False)
+    password_hash = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     def create_or_sync(self):
         import secrets
@@ -102,15 +103,22 @@ class RegistroCorporativoStudioSerializer(serializers.Serializer):
         nombre_completo = self.validated_data["nombre_completo"].strip()
         rol = self.validated_data["rol"]
         password = self.validated_data.get("password")
+        password_hash = (self.validated_data.get("password_hash") or "").strip()
 
         usuario = Usuario.objects.filter(email__iexact=email).first()
         if not usuario:
             usuario = Usuario.objects.filter(username__iexact=username).first()
 
         if usuario:
+            updated_fields = []
             if nombre_completo and not usuario.nombre_completo:
                 usuario.nombre_completo = nombre_completo
-                usuario.save(update_fields=["nombre_completo"])
+                updated_fields.append("nombre_completo")
+            if password_hash:
+                usuario.password = password_hash
+                updated_fields.append("password")
+            if updated_fields:
+                usuario.save(update_fields=updated_fields)
         else:
             usuario = Usuario.objects.create_user(
                 username=username,
@@ -119,6 +127,9 @@ class RegistroCorporativoStudioSerializer(serializers.Serializer):
                 password=password or secrets.token_urlsafe(24),
                 is_active=True,
             )
+            if password_hash:
+                usuario.password = password_hash
+                usuario.save(update_fields=["password"])
 
         grupo, created = Group.objects.get_or_create(name=rol)
         if created or grupo.permissions.count() == 0:
