@@ -15,6 +15,10 @@ fi
 echo "==> Aplicando migraciones de Django..."
 python manage.py migrate --noinput
 
+# Sincronizar catálogo de permisos sin sobrescribir asignaciones de roles existentes
+echo "==> Sincronizando catálogo de permisos..."
+python manage.py generar_permisos --no-grupos
+
 # Recolectar archivos estáticos
 echo "==> Recolectando archivos estáticos..."
 python manage.py collectstatic --noinput --clear
