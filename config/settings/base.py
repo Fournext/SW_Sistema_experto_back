@@ -152,9 +152,9 @@ SIMPLE_JWT = {
 
 # Swagger / OpenAPI con drf-spectacular
 SPECTACULAR_SETTINGS = {
-    "TITLE": "API Software Educativo de Sistemas Expertos",
+    "TITLE": "ExpertEdu Studio API",
     "DESCRIPTION": (
-        "Backend del Software Educativo Interactivo de Apoyo Docente "
+        "Backend de ExpertEdu Studio — Software Educativo Interactivo de Apoyo Docente "
         "para la Enseñanza de Sistemas Expertos."
     ),
     "VERSION": "1.0.0",
