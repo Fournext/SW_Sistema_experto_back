@@ -3,6 +3,7 @@ Serializadores REST para el Laboratorio de Algoritmos de Inferencia.
 """
 from rest_framework import serializers
 from apps.laboratorio_algoritmos.models import (
+    ComparticionProgramaModel,
     CorridaLaboratorioModel,
     PasoEjecucionModel,
     ProgramaAlgoritmoModel,
@@ -36,6 +37,7 @@ class IniciarEjecucionEntradaSerializer(serializers.Serializer):
     orden_reglas_ids = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     hechos_iniciales_override = serializers.DictField(required=False, default=dict)
     parametros_iniciales = serializers.DictField(required=False, default=dict)
+    snapshot_bc = serializers.DictField(required=False, default=dict)
 
 
 class AvanzarEjecucionEntradaSerializer(serializers.Serializer):
@@ -91,6 +93,9 @@ class CorridaLaboratorioSalidaSerializer(serializers.ModelSerializer):
 
 class ProgramaAlgoritmoSerializer(serializers.ModelSerializer):
     owner_nombre = serializers.SerializerMethodField()
+    programa_origen_titulo = serializers.SerializerMethodField()
+    es_propio = serializers.SerializerMethodField()
+    modo_acceso = serializers.SerializerMethodField()
 
     class Meta:
         model = ProgramaAlgoritmoModel
@@ -103,14 +108,81 @@ class ProgramaAlgoritmoSerializer(serializers.ModelSerializer):
             "descripcion",
             "codigo_fuente",
             "version_entero",
+            "programa_origen",
+            "programa_origen_titulo",
+            "es_propio",
+            "modo_acceso",
             "es_publico",
             "creado_en",
             "actualizado_en",
         ]
-        read_only_fields = ["id", "owner", "owner_nombre", "creado_en", "actualizado_en"]
+        read_only_fields = [
+            "id",
+            "owner",
+            "owner_nombre",
+            "programa_origen_titulo",
+            "es_propio",
+            "modo_acceso",
+            "creado_en",
+            "actualizado_en",
+        ]
 
     def get_owner_nombre(self, obj):
         return obj.owner.get_full_name() or obj.owner.username
+
+    def get_programa_origen_titulo(self, obj):
+        return obj.programa_origen.titulo if obj.programa_origen else None
+
+    def get_es_propio(self, obj):
+        req = self.context.get("request")
+        if req and req.user and req.user.is_authenticated:
+            return obj.owner_id == req.user.id
+        return True
+
+    def get_modo_acceso(self, obj):
+        return self.context.get("modo_acceso", "EDICION" if self.get_es_propio(obj) else "LECTURA")
+
+
+class ComparticionProgramaSerializer(serializers.ModelSerializer):
+    curso_codigo = serializers.CharField(source="curso.codigo", read_only=True)
+    curso_nombre = serializers.CharField(source="curso.nombre", read_only=True)
+    docente_nombre = serializers.SerializerMethodField()
+    programa_titulo = serializers.CharField(source="programa.titulo", read_only=True)
+    programa_descripcion = serializers.CharField(source="programa.descripcion", read_only=True)
+    codigo_fuente = serializers.CharField(source="programa.codigo_fuente", read_only=True)
+    sistema_experto_id = serializers.UUIDField(source="programa.sistema_experto_id", read_only=True)
+
+    class Meta:
+        model = ComparticionProgramaModel
+        fields = [
+            "id",
+            "programa",
+            "programa_titulo",
+            "programa_descripcion",
+            "codigo_fuente",
+            "sistema_experto_id",
+            "curso",
+            "curso_codigo",
+            "curso_nombre",
+            "docente",
+            "docente_nombre",
+            "modo_acceso",
+            "activa",
+            "fecha_compartido",
+        ]
+        read_only_fields = ["id", "docente", "fecha_compartido"]
+
+    def get_docente_nombre(self, obj):
+        return obj.docente.get_full_name() or obj.docente.username
+
+
+class CompartirProgramaEntradaSerializer(serializers.Serializer):
+    curso_id = serializers.UUIDField()
+    modo_acceso = serializers.ChoiceField(choices=["LECTURA", "COPIA_EDICION"], default="LECTURA")
+
+
+class ForkProgramaEntradaSerializer(serializers.Serializer):
+    titulo = serializers.CharField(required=False, allow_blank=True)
 
 
 class RevisionProgramaSerializer(serializers.ModelSerializer):

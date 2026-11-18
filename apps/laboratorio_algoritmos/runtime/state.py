@@ -90,6 +90,7 @@ class PreguntaPendiente:
 class VMState:
     frames: List[StackFrame] = field(default_factory=list)
     marcas_reglas: Set[str] = field(default_factory=set)
+    variables_consultadas: Set[str] = field(default_factory=set)
     estado: str = "LISTA"   # LISTA, EJECUTANDO, ESPERANDO_ENTRADA, FINALIZADA, ERROR, LIMITE_ALCANZADO
     pregunta_pendiente: Optional[PreguntaPendiente] = None
     eventos: List[EventoTraza] = field(default_factory=list)
@@ -109,6 +110,7 @@ class VMState:
             "pasos_visibles": self.pasos_visibles,
             "instrucciones_totales": self.instrucciones_totales,
             "marcas_reglas": list(self.marcas_reglas),
+            "variables_consultadas": list(self.variables_consultadas),
             "pregunta_pendiente": self.pregunta_pendiente.to_dict() if self.pregunta_pendiente else None,
             "frames": [f.to_dict() for f in self.frames],
             "eventos": [e.to_dict() for e in self.eventos[-100:]],  # Últimos 100 eventos para resumen
@@ -132,6 +134,7 @@ class VMState:
         return cls(
             frames=frames,
             marcas_reglas=set(data.get("marcas_reglas", [])),
+            variables_consultadas=set(data.get("variables_consultadas", [])),
             estado=data.get("estado", "LISTA"),
             pregunta_pendiente=pregunta,
             eventos=[EventoTraza.from_dict(e) for e in data.get("eventos", [])],

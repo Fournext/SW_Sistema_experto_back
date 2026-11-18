@@ -86,14 +86,19 @@ class FirmaFuncion:
 BUILTIN_FUNCTIONS: Dict[str, FirmaFuncion] = {
     "Disparar": FirmaFuncion(TIPO_HECHO, [("r", TIPO_REGLA), ("bh", TIPO_BASE_HECHOS)]),
     "DispararTodos": FirmaFuncion(TipoSimbolo("Hecho", es_arreglo=True), [("r", TIPO_REGLA), ("bh", TIPO_BASE_HECHOS)]),
-    "marcada": FirmaFuncion(TIPO_BOOLEAN, [("r", TIPO_REGLA)]),
-    "Marcar": FirmaFuncion(TIPO_VOID, [("r", TIPO_REGLA)]),
-    "DesmarcarReglas": FirmaFuncion(TIPO_VOID, [("r", TipoSimbolo("Regla", es_arreglo=True))]),
+    "marcada": FirmaFuncion(TIPO_BOOLEAN, [("item", TIPO_REGLA)]),
+    "Marcar": FirmaFuncion(TIPO_VOID, [("item", TIPO_REGLA)]),
+    "marcar": FirmaFuncion(TIPO_VOID, [("item", TIPO_REGLA)]),
+    "DesmarcarReglas": FirmaFuncion(TIPO_VOID, []),
+    "DesmarcarVariables": FirmaFuncion(TIPO_VOID, []),
+    "MarcarVariablesDeLaBH": FirmaFuncion(TIPO_VOID, []),
     "HechoNativo": FirmaFuncion(TIPO_BOOLEAN, [("v", TIPO_VARIABLE)]),
     "VariablesPremisa": FirmaFuncion(TipoSimbolo("Variable", es_arreglo=True), [("r", TIPO_REGLA)]),
+    "getVarPremisa": FirmaFuncion(TIPO_VARIABLE, [("r", TIPO_REGLA)]),
     "ObtenerHechosNativos": FirmaFuncion(TipoSimbolo("Lista", parametro_tipo=TIPO_VARIABLE), [("r", TipoSimbolo("Regla", es_arreglo=True))]),
     "Consultada": FirmaFuncion(TIPO_BOOLEAN, [("v", TIPO_VARIABLE)]),
     "Preguntar": FirmaFuncion(TIPO_HECHO, [("texto", TIPO_STRING), ("v", TIPO_VARIABLE)]),
+    "Pregunta": FirmaFuncion(TIPO_HECHO, [("texto", TIPO_STRING), ("v", TIPO_VARIABLE)]),
     "TodasUnificadas": FirmaFuncion(TIPO_BOOLEAN, [("bh", TIPO_BASE_HECHOS), ("metas", TipoSimbolo("Lista", parametro_tipo=TIPO_VARIABLE))]),
     "Mostrar": FirmaFuncion(TIPO_VOID, [("texto", TIPO_STRING)]),
     "println": FirmaFuncion(TIPO_VOID, [("texto", TIPO_STRING)]),
@@ -398,7 +403,7 @@ class TypeChecker:
                     return TIPO_STRING
                 if expr.miembro == "tipo_dato":
                     return TIPO_STRING
-                if expr.miembro == "es_nativa":
+                if expr.miembro in ("es_nativa", "marcada"):
                     return TIPO_BOOLEAN
 
             # Colecciones o BaseHechos con .length
@@ -430,6 +435,32 @@ class TypeChecker:
                 args_tipos = [self._verificar_expresion(a, scope) for a in expr.argumentos]
                 if nombre_func not in self.funciones:
                     raise TipoError(f"Función '{nombre_func}' no encontrada.", span=expr.span, codigo="FUNCION_NO_DECLARADA")
+
+                # Sobrecargas especiales para built-ins comunes del laboratorio
+                if nombre_func in ("marcada", "marcar", "Marcar"):
+                    if len(args_tipos) != 1:
+                        raise TipoError(f"Función '{nombre_func}' espera 1 argumento (Regla o Variable).", span=expr.span, codigo="CANTIDAD_ARGUMENTOS_INCORRECTA")
+                    arg_t = args_tipos[0]
+                    if arg_t.nombre not in ("Regla", "Variable") or arg_t.es_arreglo:
+                        raise TipoError(
+                            f"Argumento 1 de '{nombre_func}' incompatible. Esperado Regla o Variable, recibido {arg_t}.",
+                            span=expr.argumentos[0].span,
+                            codigo="TIPO_ARGUMENTO_INCOMPATIBLE"
+                        )
+                    return TIPO_BOOLEAN if nombre_func == "marcada" else TIPO_VOID
+
+                if nombre_func in ("DesmarcarReglas", "DesmarcarVariables"):
+                    if len(args_tipos) > 1:
+                        raise TipoError(f"Función '{nombre_func}' espera 0 o 1 argumento opcional.", span=expr.span, codigo="CANTIDAD_ARGUMENTOS_INCORRECTA")
+                    return TIPO_VOID
+
+                if nombre_func == "MarcarVariablesDeLaBH":
+                    if len(args_tipos) > 1:
+                        raise TipoError("Función 'MarcarVariablesDeLaBH' espera 0 o 1 argumento (BaseHechos).", span=expr.span, codigo="CANTIDAD_ARGUMENTOS_INCORRECTA")
+                    if len(args_tipos) == 1 and args_tipos[0].nombre != "BaseHechos":
+                        raise TipoError("MarcarVariablesDeLaBH(bh) espera una BaseHechos.", span=expr.argumentos[0].span, codigo="TIPO_ARGUMENTO_INCOMPATIBLE")
+                    return TIPO_VOID
+
                 firma = self.funciones[nombre_func]
                 if len(args_tipos) != len(firma.parametros):
                     raise TipoError(

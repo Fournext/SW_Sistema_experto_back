@@ -25,6 +25,14 @@ class ProgramaAlgoritmoModel(models.Model):
     descripcion = models.TextField(blank=True, default="", verbose_name="Descripción")
     codigo_fuente = models.TextField(default="", verbose_name="Código Fuente")
     version_entero = models.IntegerField(default=1, verbose_name="Versión")
+    programa_origen = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="copias_derivadas",
+        verbose_name="Programa de origen (si es copia/fork)",
+    )
     es_publico = models.BooleanField(default=False, verbose_name="¿Es público para alumnos?")
     creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     actualizado_en = models.DateTimeField(auto_now=True, verbose_name="Fecha de actualización")
@@ -151,3 +159,55 @@ class PasoEjecucionModel(models.Model):
 
     def __str__(self):
         return f"Paso {self.numero_paso} (Línea {self.linea}:{self.columna}) - Corrida {self.corrida_id}"
+
+
+class ComparticionProgramaModel(models.Model):
+    """Registro de compartición de un algoritmo por parte de un docente a un curso."""
+
+    MODOS_ACCESO = (
+        ("LECTURA", "Solo Lectura"),
+        ("COPIA_EDICION", "Permitir Edición (Copia para el alumno)"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    programa = models.ForeignKey(
+        ProgramaAlgoritmoModel,
+        on_delete=models.CASCADE,
+        related_name="comparticiones",
+        verbose_name="Programa de Algoritmo",
+    )
+    curso = models.ForeignKey(
+        "actividades.CursoModel",
+        on_delete=models.CASCADE,
+        related_name="algoritmos_compartidos",
+        verbose_name="Curso destinatario",
+    )
+    docente = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="algoritmos_compartidos_docente",
+        verbose_name="Docente que comparte",
+    )
+    modo_acceso = models.CharField(
+        max_length=20,
+        choices=MODOS_ACCESO,
+        default="LECTURA",
+        verbose_name="Modo de Acceso",
+    )
+    activa = models.BooleanField(default=True, verbose_name="¿Compartición activa?")
+    fecha_compartido = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de compartición")
+
+    class Meta:
+        db_table = "lab_comparticiones_programa"
+        verbose_name = "Compartición de Programa"
+        verbose_name_plural = "Comparticiones de Programas"
+        ordering = ["-fecha_compartido"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["programa", "curso"],
+                name="unique_programa_por_curso",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.programa.titulo} -> Curso {self.curso.codigo} ({self.modo_acceso})"

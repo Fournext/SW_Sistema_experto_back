@@ -161,6 +161,9 @@ class Lexer:
             else:
                 span = self._crear_span()
                 raise SintaxisError("Operador no soportado '|'. ¿Quisiste escribir '||'?", span=span)
+        elif c in ("^", "∧"):
+            # Notación lógica común de pizarrón para conjunción (AND)
+            self._agregar_token(TokenType.AND_AND)
 
         # Cadenas de texto
         elif c == '"':
