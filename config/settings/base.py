@@ -47,6 +47,7 @@ INSTALLED_APPS = [
 
 AUTH_USER_MODEL = "usuarios.Usuario"
 SISTEMA_SLUG = os.getenv("SISTEMA_SLUG", "sistema-experto")
+STUDIO_SERVICE_KEY = os.getenv("STUDIO_SERVICE_KEY", "expertedu-studio-sso-dev-key")
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",

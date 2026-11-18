@@ -32,6 +32,15 @@ class Usuario(AbstractUser):
         blank=True,
         verbose_name="URL de foto de perfil",
     )
+    terminos_aceptados = models.BooleanField(
+        default=False,
+        verbose_name="Términos y condiciones aceptados",
+    )
+    terminos_aceptados_en = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha de aceptación de términos",
+    )
     fecha_modificacion = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -86,6 +86,52 @@ class RegistroEstudianteSerializer(serializers.Serializer):
         return usuario
 
 
+class RegistroCorporativoStudioSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    nombre_completo = serializers.CharField(max_length=200)
+    rol = serializers.ChoiceField(choices=["Docente", "Estudiante"])
+    password = serializers.CharField(write_only=True, min_length=6, required=False)
+
+    def create_or_sync(self):
+        import secrets
+        from apps.permisos.services import PermisoService
+
+        email = self.validated_data["email"].strip().lower()
+        username = self.validated_data["username"].strip()
+        nombre_completo = self.validated_data["nombre_completo"].strip()
+        rol = self.validated_data["rol"]
+        password = self.validated_data.get("password")
+
+        usuario = Usuario.objects.filter(email__iexact=email).first()
+        if not usuario:
+            usuario = Usuario.objects.filter(username__iexact=username).first()
+
+        if usuario:
+            if nombre_completo and not usuario.nombre_completo:
+                usuario.nombre_completo = nombre_completo
+                usuario.save(update_fields=["nombre_completo"])
+        else:
+            usuario = Usuario.objects.create_user(
+                username=username,
+                email=email,
+                nombre_completo=nombre_completo,
+                password=password or secrets.token_urlsafe(24),
+                is_active=True,
+            )
+
+        grupo, created = Group.objects.get_or_create(name=rol)
+        if created or grupo.permissions.count() == 0:
+            PermisoService.escanear_y_generar_permisos(verbose=False)
+            grupo = Group.objects.get(name=rol)
+
+        # Mantener coherencia entre Docente y Estudiante
+        otro_rol = "Estudiante" if rol == "Docente" else "Docente"
+        usuario.groups.remove(*Group.objects.filter(name=otro_rol))
+        usuario.groups.add(grupo)
+        return usuario
+
+
 class UsuarioYoSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
     permisos = serializers.SerializerMethodField()
@@ -99,6 +145,8 @@ class UsuarioYoSerializer(serializers.ModelSerializer):
             "email",
             "nombre_completo",
             "es_admin_central",
+            "terminos_aceptados",
+            "terminos_aceptados_en",
             "roles",
             "permisos",
             "date_joined",
